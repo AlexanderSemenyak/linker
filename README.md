@@ -1,3 +1,5 @@
+original: https://github.com/dotnet/linker
+
 # Trimming Tools
 
 This repository hosts various tools and msbuild tasks which are used when trimming managed applications with .NET 5 and newer.
