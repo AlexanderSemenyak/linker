@@ -1,24 +1,28 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Mono.Linker.Tests.Cases.Expectations.Assertions;
 using Mono.Linker.Tests.Cases.Expectations.Helpers;
+using Mono.Linker.Tests.Cases.Expectations.Metadata;
 
 namespace Mono.Linker.Tests.Cases.DataFlow
 {
 	[SkipKeptItemsValidation]
+	[SandboxDependency ("Dependencies/TestSystemTypeBase.cs")]
 	[ExpectedNoWarnings]
 	public class TypeBaseTypeDataFlow
 	{
 		public static void Main ()
 		{
 			TestAllPropagated (typeof (TestType));
+			AllPropagatedWithDerivedClass.Test ();
 
 			TestPublicConstructorsAreNotPropagated (typeof (TestType));
 			TestPublicEventsPropagated (typeof (TestType));
@@ -44,13 +48,37 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			TestNoAnnotation (typeof (TestType));
 			TestAnnotatedAndUnannotated (typeof (TestType), typeof (TestType), 0);
 			TestNull ();
+			TestNoValue ();
 
 			Mixed_Derived.Test (typeof (TestType), 0);
+
+			LoopPatterns.Test ();
 		}
 
 		static void TestAllPropagated ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.All)] Type derivedType)
 		{
 			derivedType.BaseType.RequiresAll ();
+		}
+
+		class AllPropagatedWithDerivedClass
+		{
+			// https://github.com/dotnet/linker/issues/2673
+			[ExpectedWarning ("IL2072", nameof (DataFlowTypeExtensions.RequiresAll) + "(Type)", nameof (TestSystemTypeBase.BaseType) + ".get",
+				ProducedBy = ProducedBy.Analyzer)]
+			static void TestAllPropagated ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.All)] TestSystemTypeBase derivedType)
+			{
+				derivedType.BaseType.RequiresAll ();
+			}
+
+			// This is a very special case - normally there's basically no way to "new up" a Type instance via the "new" operator
+			// so the analyzer doesn't handle this case at all - meaning it sees it as empty value.
+			// Unlike linker which sees an unknown value and thus warns that it doesn't fulfill the All annotation.
+			// It's OK for the analyzer to be more forgiving in this case, due to the very special circumstances.
+			[ExpectedWarning ("IL2062", nameof (TestAllPropagated), ProducedBy = ProducedBy.Trimmer)]
+			public static void Test ()
+			{
+				TestAllPropagated (new TestSystemTypeBase ());
+			}
 		}
 
 		[ExpectedWarning ("IL2072", nameof (DataFlowTypeExtensions) + "." + nameof (DataFlowTypeExtensions.RequiresPublicConstructors))]
@@ -204,11 +232,18 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			type.BaseType.RequiresPublicMethods ();
 		}
 
-		[ExpectedWarning ("IL2072", nameof (DataFlowTypeExtensions) + "." + nameof (DataFlowTypeExtensions.RequiresPublicMethods))]
 		static void TestNull ()
 		{
 			Type type = null;
 			type.BaseType.RequiresPublicMethods ();
+		}
+
+		static void TestNoValue ()
+		{
+			Type t = null;
+			Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+			// No warning because the above throws an exception at runtime.
+			noValue.BaseType.RequiresPublicMethods ();
 		}
 
 		class Mixed_Base
@@ -240,6 +275,62 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				}
 
 				type.BaseType.RequiresPublicMethods ();
+			}
+		}
+
+		class LoopPatterns
+		{
+			static void EnumerateInterfacesOnBaseTypes ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.Interfaces)] Type type)
+			{
+				Type? t = type;
+				while (t != null) {
+					Type[] interfaces = t.GetInterfaces ();
+					t = t.BaseType;
+				}
+			}
+
+			[ExpectedWarning ("IL2070")]
+			[ExpectedWarning ("IL2075", ProducedBy = ProducedBy.Analyzer)] // Linker doesn't implement backward branches data flow yet
+			static void EnumerateInterfacesOnBaseTypes_Unannotated (Type type)
+			{
+				Type? t = type;
+				while (t != null) {
+					Type[] interfaces = t.GetInterfaces ();
+					t = t.BaseType;
+				}
+			}
+
+			// Can only work with All annotation as NonPublicProperties doesn't propagate to base types
+			static void EnumeratePrivatePropertiesOnBaseTypes ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.All)] Type type)
+			{
+				const BindingFlags DeclaredOnlyLookup = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+				Type? t = type;
+				while (t != null) {
+					t.GetProperties (DeclaredOnlyLookup).GetEnumerator ();
+					t = t.BaseType;
+				}
+			}
+
+			// Can only work with All annotation as NonPublicProperties doesn't propagate to base types
+			static void EnumeratePrivatePropertiesOnBaseTypesWithForeach ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.All)] Type type)
+			{
+				const BindingFlags DeclaredOnlyLookup = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+				Type? t = type;
+				while (t != null) {
+					foreach (var p in t.GetProperties (DeclaredOnlyLookup)) {
+						// Do nothing
+					}
+					t = t.BaseType;
+				}
+			}
+
+			public static void Test ()
+			{
+				EnumerateInterfacesOnBaseTypes (typeof (TestType));
+				EnumerateInterfacesOnBaseTypes_Unannotated (typeof (TestType));
+
+				EnumeratePrivatePropertiesOnBaseTypes (typeof (TestType));
+				EnumeratePrivatePropertiesOnBaseTypesWithForeach (typeof (TestType));
 			}
 		}
 

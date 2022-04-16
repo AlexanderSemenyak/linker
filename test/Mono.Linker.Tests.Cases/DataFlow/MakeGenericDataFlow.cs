@@ -22,7 +22,10 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			public static void Test ()
 			{
 				TestNullType ();
+				TestNoValueInput ();
 				TestUnknownInput (null);
+				TestNullTypeArgument ();
+				TestNoValueTypeArgument ();
 				TestWithUnknownTypeArray (null);
 				TestWithArrayUnknownIndexSet (0);
 				TestWithArrayUnknownLengthSet (1);
@@ -51,6 +54,26 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			{
 				Type nullType = null;
 				nullType.MakeGenericType (typeof (TestType));
+			}
+
+			static void TestNoValueInput ()
+			{
+				Type t = null;
+				Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+				noValue.MakeGenericType (typeof (TestType));
+			}
+
+			static void TestNullTypeArgument ()
+			{
+				Type t = null;
+				typeof (GenericWithPublicFieldsArgument<>).MakeGenericType (t);
+			}
+
+			static void TestNoValueTypeArgument ()
+			{
+				Type t = null;
+				Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+				typeof (GenericWithPublicFieldsArgument<>).MakeGenericType (noValue);
 			}
 
 			[ExpectedWarning ("IL2055", nameof (Type.MakeGenericType))]
@@ -194,8 +217,22 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			public static void Test ()
 			{
 				TestNullMethod ();
+				TestNullMethodName ();
+				TestNullMethodName_GetRuntimeMethod ();
+				TestMethodOnNullType ();
+				TestMethodOnNullType_GetRuntimeMethod ();
+				TestWithEmptyInputToGetMethod (null);
+				TestWithEmptyInputToGetMethod_GetRuntimeMethod (null);
+				TestWithEmptyInputNoSuchMethod (null);
+				TestWithEmptyInputNoSuchMethod_GetRuntimeMethod (null);
 				TestUnknownMethod (null);
 				TestUnknownMethodButNoTypeArguments (null);
+				TestWithMultipleTypes ();
+				TestWithMultipleTypes_GetRuntimeMethod ();
+				TestWithMultipleNames ();
+				TestWithMultipleNames_GetRuntimeMethod ();
+				TestNullTypeArgument ();
+				TestNoValueTypeArgument ();
 				TestWithUnknownTypeArray (null);
 				TestWithArrayUnknownIndexSet (0);
 				TestWithArrayUnknownIndexSetByRef (0);
@@ -235,6 +272,62 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				mi.MakeGenericMethod (typeof (TestType));
 			}
 
+			static void TestNullMethodName ()
+			{
+				// GetMethod(null) throws at runtime.
+				MethodInfo noValue = typeof (MakeGenericMethod).GetMethod (null);
+				noValue.MakeGenericMethod (typeof (TestType));
+			}
+
+			static void TestNullMethodName_GetRuntimeMethod ()
+			{
+				// GetRuntimeMethod(null, ...) throws at runtime.
+				MethodInfo noValue = typeof (MakeGenericMethod).GetRuntimeMethod (null, new Type[] { });
+				noValue.MakeGenericMethod (typeof (TestType));
+			}
+
+			static void TestMethodOnNullType ()
+			{
+				Type t = null;
+				MethodInfo noValue = t.GetMethod (null);
+				noValue.MakeGenericMethod (typeof (TestType));
+			}
+
+			static void TestMethodOnNullType_GetRuntimeMethod ()
+			{
+				Type t = null;
+				MethodInfo noValue = t.GetRuntimeMethod (null, new Type[] { });
+				noValue.MakeGenericMethod (typeof (TestType));
+			}
+
+			static void TestWithEmptyInputToGetMethod (Type unknownType)
+			{
+				Type t = null;
+				Type noValue = Type.GetTypeFromHandle (t.TypeHandle); // Returns empty value set (throws at runtime)
+																	  // No warning - since there's no method on input
+				noValue.GetMethod ("NoMethod").MakeGenericMethod (unknownType);
+			}
+
+			static void TestWithEmptyInputToGetMethod_GetRuntimeMethod (Type unknownType)
+			{
+				Type t = null;
+				Type noValue = Type.GetTypeFromHandle (t.TypeHandle); // Returns empty value set (throws at runtime)
+																	  // No warning - since there's no method on input
+				noValue.GetRuntimeMethod ("NoMethod", new Type[] { }).MakeGenericMethod (unknownType);
+			}
+
+			static void TestWithEmptyInputNoSuchMethod (Type unknownType)
+			{
+				// No warning - the method doesn't exist, so this should throw at runtime anyway
+				typeof (TestType).GetMethod ("NoSuchMethod").MakeGenericMethod (unknownType);
+			}
+
+			static void TestWithEmptyInputNoSuchMethod_GetRuntimeMethod (Type unknownType)
+			{
+				// No warning - the method doesn't exist, so this should throw at runtime anyway
+				typeof (TestType).GetRuntimeMethod ("NoSuchMethod", new Type[] { }).MakeGenericMethod (unknownType);
+			}
+
 			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
 			static void TestUnknownMethod (MethodInfo mi)
 			{
@@ -246,6 +339,109 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			{
 				// Thechnically linker could figure this out, but it's not worth the complexity - such call will always fail at runtime.
 				mi.MakeGenericMethod (Type.EmptyTypes);
+			}
+
+			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
+			static void TestWithMultipleTypes (
+				int p = 0,
+				[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicMethods)] Type annotatedType = null)
+			{
+				Type t = null;
+				switch (p) {
+				case 0:
+					t = typeof (MakeGenericMethod);
+					break;
+				case 1:
+					t = null;
+					break;
+				case 2:
+					t = annotatedType;
+					break;
+				}
+
+				// This should warn just once due to case 2 - annotated type, but unknown method
+				t.GetMethod (nameof (GenericWithNoRequirements), BindingFlags.Static).MakeGenericMethod (new Type[] { typeof (TestType) });
+			}
+
+			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
+			static void TestWithMultipleTypes_GetRuntimeMethod (
+				int p = 0,
+				[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicMethods)] Type annotatedType = null)
+			{
+				Type t = null;
+				switch (p) {
+				case 0:
+					t = typeof (MakeGenericMethod);
+					break;
+				case 1:
+					t = null;
+					break;
+				case 2:
+					t = annotatedType;
+					break;
+				}
+
+				// This should warn just once due to case 2 - annotated type, but unknown method
+				t.GetRuntimeMethod (nameof (GenericWithNoRequirements), new Type[] { }).MakeGenericMethod (new Type[] { typeof (TestType) });
+			}
+
+			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
+			static void TestWithMultipleNames (
+				int p = 0,
+				string unknownName = null)
+			{
+				string name = null;
+				switch (p) {
+				case 0:
+					name = nameof (GenericWithNoRequirements);
+					break;
+				case 1:
+					name = null;
+					break;
+				case 2:
+					name = unknownName;
+					break;
+				}
+
+				// This should warn just once due to case 2 - unknown name
+				typeof (MakeGenericMethod).GetMethod (name, BindingFlags.Static).MakeGenericMethod (new Type[] { typeof (TestType) });
+			}
+
+			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
+			static void TestWithMultipleNames_GetRuntimeMethod (
+				int p = 0,
+				string unknownName = null)
+			{
+				string name = null;
+				switch (p) {
+				case 0:
+					name = nameof (GenericWithNoRequirements);
+					break;
+				case 1:
+					name = null;
+					break;
+				case 2:
+					name = unknownName;
+					break;
+				}
+
+				// This should warn just once due to case 2 - unknown name
+				typeof (MakeGenericMethod).GetRuntimeMethod (name, new Type[] { }).MakeGenericMethod (new Type[] { typeof (TestType) });
+			}
+
+			static void TestNullTypeArgument ()
+			{
+				Type t = null;
+				typeof (MakeGenericMethod).GetMethod (nameof (GenericWithRequirements), BindingFlags.Static)
+					.MakeGenericMethod (t);
+			}
+
+			static void TestNoValueTypeArgument ()
+			{
+				Type t = null;
+				Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+				typeof (MakeGenericMethod).GetMethod (nameof (GenericWithRequirements), BindingFlags.Static)
+					.MakeGenericMethod (noValue);
 			}
 
 			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]

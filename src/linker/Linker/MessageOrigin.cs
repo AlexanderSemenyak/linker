@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Diagnostics;
@@ -14,13 +14,6 @@ namespace Mono.Linker
 	{
 		public string? FileName { get; }
 		public ICustomAttributeProvider? Provider { get; }
-		readonly ICustomAttributeProvider? _suppressionContextMember;
-		public ICustomAttributeProvider? SuppressionContextMember {
-			get {
-				Debug.Assert (_suppressionContextMember == null || _suppressionContextMember is IMemberDefinition || _suppressionContextMember is AssemblyDefinition);
-				return _suppressionContextMember ?? Provider;
-			}
-		}
 
 		public int SourceLine { get; }
 		public int SourceColumn { get; }
@@ -51,32 +44,23 @@ namespace Mono.Linker
 			SourceLine = sourceLine;
 			SourceColumn = sourceColumn;
 			Provider = assembly;
-			_suppressionContextMember = null;
 			ILOffset = null;
 		}
 
 		public MessageOrigin (ICustomAttributeProvider? provider, int? ilOffset)
-			: this (provider, ilOffset, null)
-		{
-		}
-
-		public MessageOrigin (ICustomAttributeProvider? provider, int? ilOffset, ICustomAttributeProvider? suppressionContextMember)
 		{
 			Debug.Assert (provider == null || provider is IMemberDefinition || provider is AssemblyDefinition);
-			Debug.Assert (suppressionContextMember == null || suppressionContextMember is IMemberDefinition || provider is AssemblyDefinition);
 			FileName = null;
 			Provider = provider;
-			_suppressionContextMember = suppressionContextMember;
 			SourceLine = 0;
 			SourceColumn = 0;
 			ILOffset = ilOffset;
 		}
 
-		public MessageOrigin (MessageOrigin other, IMemberDefinition? suppressionContextMember)
+		public MessageOrigin (MessageOrigin other)
 		{
 			FileName = other.FileName;
 			Provider = other.Provider;
-			_suppressionContextMember = suppressionContextMember;
 			SourceLine = other.SourceLine;
 			SourceColumn = other.SourceColumn;
 			ILOffset = other.ILOffset;

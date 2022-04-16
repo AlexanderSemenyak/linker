@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -18,6 +18,7 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			TestByBindingFlags ();
 			TestByUnknownBindingFlags (BindingFlags.Public);
 			TestNullType ();
+			TestNoValue ();
 			TestDataFlowType ();
 			TestDataFlowWithAnnotation (typeof (MyType));
 			TestIgnoreCaseBindingFlags ();
@@ -60,6 +61,14 @@ namespace Mono.Linker.Tests.Cases.Reflection
 		{
 			Type type = null;
 			_ = type.GetNestedTypes (BindingFlags.Public);
+		}
+
+		[Kept]
+		static void TestNoValue ()
+		{
+			Type t = null;
+			Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+			_ = noValue.GetNestedTypes (BindingFlags.Public);
 		}
 
 		[Kept]

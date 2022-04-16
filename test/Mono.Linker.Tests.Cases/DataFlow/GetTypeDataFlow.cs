@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -21,6 +21,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			TestPublicParameterlessConstructor ();
 			TestPublicConstructors ();
 			TestConstructors ();
+			TestNull ();
+			TestNoValue ();
 			TestUnknownType ();
 
 			TestTypeNameFromParameter (null);
@@ -67,6 +69,22 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			type.RequiresPublicConstructors ();
 			type.RequiresNonPublicConstructors ();
 			type.RequiresNone ();
+		}
+
+		[ExpectedWarning ("IL2072", nameof (DataFlowTypeExtensions.RequiresAll) + "(Type)", nameof (Type.GetType) + "(String)")]
+		static void TestNull ()
+		{
+			// Warns about the return value of GetType, even though this throws at runtime.
+			Type.GetType (null).RequiresAll ();
+		}
+
+		[ExpectedWarning ("IL2072", nameof (DataFlowTypeExtensions.RequiresAll) + "(Type)", nameof (Type.GetType) + "(String)")]
+		static void TestNoValue ()
+		{
+			Type t = null;
+			string noValue = t.AssemblyQualifiedName;
+			// Warns about the return value of GetType, even though AssemblyQualifiedName throws at runtime.
+			Type.GetType (noValue).RequiresAll ();
 		}
 
 		[ExpectedWarning ("IL2057", nameof (GetType))]

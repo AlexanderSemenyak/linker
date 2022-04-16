@@ -36,8 +36,10 @@ namespace Mono.Linker.Tests.Cases.Reflection
 #endif
 			TestNullName ();
 			TestEmptyName ();
+			TestNoValueName ();
 			TestNonExistingName ();
 			TestNullType ();
+			TestNoValue ();
 			TestDataFlowType ();
 			IfElse.TestIfElse (1);
 			DerivedAndBase.TestMethodInBaseType ();
@@ -284,7 +286,6 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			{
 				private static void Known () { }
 
-				[Kept] // Currently this is kept as we don't have a special case for null constant (not worth it)
 				public void AlsoKnown () { }
 			}
 
@@ -594,6 +595,14 @@ namespace Mono.Linker.Tests.Cases.Reflection
 		}
 
 		[Kept]
+		static void TestNoValueName ()
+		{
+			Type t = null;
+			string noValue = t.AssemblyQualifiedName;
+			var method = typeof (MethodUsedViaReflection).GetMethod (noValue);
+		}
+
+		[Kept]
 		static void TestNonExistingName ()
 		{
 			var method = typeof (MethodUsedViaReflection).GetMethod ("NonExisting");
@@ -604,6 +613,14 @@ namespace Mono.Linker.Tests.Cases.Reflection
 		{
 			Type type = null;
 			var method = type.GetMethod ("OnlyCalledViaReflection", BindingFlags.Static | BindingFlags.Public);
+		}
+
+		[Kept]
+		static void TestNoValue ()
+		{
+			Type t = null;
+			Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+			var method = noValue.GetMethod ("OnlyCalledViaReflection", BindingFlags.Static | BindingFlags.Public);
 		}
 
 		[Kept]
@@ -815,33 +832,9 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			}
 		}
 
-		[Kept]
-		public static int OnlyCalledViaReflection ()
+		public static int Unused ()
 		{
 			return 42;
-		}
-
-		private static int PrivateMethod ()
-		{
-			return 42;
-		}
-
-		[Kept]
-		public int OnlyCalledViaReflection (int foo)
-		{
-			return 43;
-		}
-
-		// This one will not be kept as we're only ever ask for public methods of this name
-		int OnlyCalledViaReflection (int foo, int bar)
-		{
-			return 44;
-		}
-
-		[Kept]
-		public static int OnlyCalledViaReflection (int foo, int bar, int baz)
-		{
-			return 45;
 		}
 	}
 }

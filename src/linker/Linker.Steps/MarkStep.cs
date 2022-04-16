@@ -1,3 +1,6 @@
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 //
 // MarkStep.cs
 //
@@ -234,7 +237,7 @@ namespace Mono.Linker.Steps
 			_context = context;
 			_unreachableBlocksOptimizer = new UnreachableBlocksOptimizer (_context);
 			_markContext = new MarkStepContext ();
-			_scopeStack = new MarkScopeStack (_context);
+			_scopeStack = new MarkScopeStack ();
 			_dynamicallyAccessedMembersTypeHierarchy = new DynamicallyAccessedMembersTypeHierarchy (_context, this, _scopeStack);
 
 			Initialize ();
@@ -581,11 +584,15 @@ namespace Mono.Linker.Steps
 			foreach ((var type, var scope) in typesWithInterfaces) {
 				// Exception, types that have not been flagged as instantiated yet.  These types may not need their interfaces even if the
 				// interface type is marked
-				if (!Annotations.IsInstantiated (type) && !Annotations.IsRelevantToVariantCasting (type))
+				// UnusedInterfaces optimization is turned off mark all interface implementations
+				bool unusedInterfacesOptimizationEnabled = Context.IsOptimizationEnabled (CodeOptimizations.UnusedInterfaces, type);
+				if (!Annotations.IsInstantiated (type) && !Annotations.IsRelevantToVariantCasting (type) &&
+					unusedInterfacesOptimizationEnabled)
 					continue;
 
-				using (ScopeStack.PushScope (scope))
+				using (ScopeStack.PushScope (scope)) {
 					MarkInterfaceImplementations (type);
+				}
 			}
 		}
 
@@ -824,7 +831,6 @@ namespace Mono.Linker.Steps
 						continue;
 
 					MarkCustomAttribute (ca, reason);
-					MarkSpecialCustomAttributeDependencies (ca, provider);
 				}
 			}
 
@@ -1563,7 +1569,6 @@ namespace Mono.Linker.Steps
 				markOccurred = true;
 				using (ScopeStack.PushScope (scope)) {
 					MarkCustomAttribute (customAttribute, reason);
-					MarkSpecialCustomAttributeDependencies (customAttribute, provider);
 				}
 			}
 
@@ -1718,6 +1723,9 @@ namespace Mono.Linker.Steps
 			}
 		}
 
+		/// <summary>
+		/// Returns true if the assembly of the <paramref name="scope"></paramref> is not set to link (i.e. action=copy is set for that assembly)
+		/// </summary>
 		protected virtual bool IgnoreScope (IMetadataScope scope)
 		{
 			AssemblyDefinition? assembly = Context.Resolve (scope);
@@ -1914,7 +1922,7 @@ namespace Mono.Linker.Steps
 			MarkGenericParameterProvider (type);
 
 			// There are a number of markings we can defer until later when we know it's possible a reference type could be instantiated
-			// For example, if no instance of a type exist, then we don't need to mark the interfaces on that type
+			// For example, if no instance of a type exist, then we don't need to mark the interfaces on that type -- Note this is not true for static interfaces
 			// However, for some other types there is no benefit to deferring
 			if (type.IsInterface) {
 				// There's no benefit to deferring processing of an interface type until we know a type implementing that interface is marked
@@ -1938,12 +1946,13 @@ namespace Mono.Linker.Steps
 				MarkRequirementsForInstantiatedTypes (type);
 			}
 
+			// Save for later once we know which interfaces are marked and then determine which interface implementations and methods to keep
 			if (type.HasInterfaces)
 				_typesWithInterfaces.Add ((type, ScopeStack.CurrentScope));
 
 			if (type.HasMethods) {
-				// For virtuals that must be preserved, blame the declaring type.
-				MarkMethodsIf (type.Methods, IsVirtualNeededByTypeDueToPreservedScope, new DependencyInfo (DependencyKind.VirtualNeededDueToPreservedScope, type));
+				// For methods that must be preserved, blame the declaring type.
+				MarkMethodsIf (type.Methods, IsMethodNeededByTypeDueToPreservedScope, new DependencyInfo (DependencyKind.VirtualNeededDueToPreservedScope, type));
 				if (ShouldMarkTypeStaticConstructor (type) && reason.Kind != DependencyKind.TriggersCctorForCalledMethod) {
 					using (ScopeStack.PopToParent ())
 						MarkStaticConstructor (type, new DependencyInfo (DependencyKind.CctorForType, type));
@@ -2044,28 +2053,8 @@ namespace Mono.Linker.Steps
 					if (MarkMethodsIf (type.Methods, MethodDefinitionExtensions.IsPublicInstancePropertyMethod, new DependencyInfo (DependencyKind.ReferencedBySpecialAttribute, type)))
 						Tracer.AddDirectDependency (attribute, new DependencyInfo (DependencyKind.CustomAttribute, type), marked: false);
 					break;
-				case "TypeDescriptionProviderAttribute" when attrType.Namespace == "System.ComponentModel":
-					MarkTypeConverterLikeDependency (attribute, l => l.IsDefaultConstructor (), type);
-					break;
 				}
 			}
-		}
-
-		//
-		// Used for known framework attributes which can be applied to any element
-		//
-		bool MarkSpecialCustomAttributeDependencies (CustomAttribute ca, ICustomAttributeProvider provider)
-		{
-			var dt = ca.Constructor.DeclaringType;
-			if (dt.Name == "TypeConverterAttribute" && dt.Namespace == "System.ComponentModel") {
-				MarkTypeConverterLikeDependency (ca, l =>
-					l.IsDefaultConstructor () ||
-					l.Parameters.Count == 1 && l.Parameters[0].ParameterType.IsTypeOf ("System", "Type"),
-					provider);
-				return true;
-			}
-
-			return false;
 		}
 
 		void MarkMethodSpecialCustomAttributes (MethodDefinition method)
@@ -2088,34 +2077,6 @@ namespace Mono.Linker.Steps
 				Tracer.AddDirectDependency (attribute, new DependencyInfo (DependencyKind.CustomAttribute, type), marked: false);
 				MarkNamedMethod (type, name, new DependencyInfo (DependencyKind.ReferencedBySpecialAttribute, attribute));
 			}
-		}
-
-		protected virtual void MarkTypeConverterLikeDependency (CustomAttribute attribute, Func<MethodDefinition, bool> predicate, ICustomAttributeProvider provider)
-		{
-			var args = attribute.ConstructorArguments;
-			if (args.Count < 1)
-				return;
-
-			TypeDefinition? typeDefinition = null;
-			switch (attribute.ConstructorArguments[0].Value) {
-			case string s:
-				if (!Context.TypeNameResolver.TryResolveTypeName (s, ScopeStack.CurrentScope.Origin.Provider, out TypeReference? typeRef, out AssemblyDefinition? assemblyDefinition))
-					break;
-				typeDefinition = Context.TryResolve (typeRef);
-				if (typeDefinition != null)
-					MarkingHelpers.MarkMatchingExportedType (typeDefinition, assemblyDefinition, new DependencyInfo (DependencyKind.CustomAttribute, provider), ScopeStack.CurrentScope.Origin);
-
-				break;
-			case TypeReference type:
-				typeDefinition = Context.Resolve (type);
-				break;
-			}
-
-			if (typeDefinition == null)
-				return;
-
-			Tracer.AddDirectDependency (attribute, new DependencyInfo (DependencyKind.CustomAttribute, provider), marked: false);
-			MarkMethodsIf (typeDefinition.Methods, predicate, new DependencyInfo (DependencyKind.ReferencedBySpecialAttribute, attribute));
 		}
 
 		static readonly Regex DebuggerDisplayAttributeValueRegex = new Regex ("{[^{}]+}", RegexOptions.Compiled);
@@ -2325,9 +2286,19 @@ namespace Mono.Linker.Steps
 			}
 		}
 
-		bool IsVirtualNeededByTypeDueToPreservedScope (MethodDefinition method)
+		/// <summary>
+		/// Returns true if any of the base methods of the <paramref name="method"/> passed is in an assembly that is not trimmed (i.e. action != trim).
+		/// Meant to be used to determine whether methods should be marked regardless of whether it is instantiated or not. 
+		/// </summary>
+		/// <remarks>
+		/// When the unusedinterfaces optimization is on, this is used to mark methods that override an abstract method from a non-link assembly and must be kept.
+		/// When the unusedinterfaces optimization is off, this will do the same as when on but will also mark interface methods from interfaces defined in a non-link assembly.
+		/// If the containing type is instantiated, the caller should also use <see cref="IsMethodNeededByInstantiatedTypeDueToPreservedScope (MethodDefinition)" />
+		/// </remarks>
+		bool IsMethodNeededByTypeDueToPreservedScope (MethodDefinition method)
 		{
-			if (!method.IsVirtual)
+			// Static methods may also have base methods in static interface methods. These methods are not captured by IsVirtual and must be checked separately
+			if (!(method.IsVirtual || method.IsStatic))
 				return false;
 
 			var base_list = Annotations.GetBaseMethods (method);
@@ -2336,8 +2307,8 @@ namespace Mono.Linker.Steps
 
 			foreach (MethodDefinition @base in base_list) {
 				// Just because the type is marked does not mean we need interface methods.
-				// if the type is never instantiated, interfaces will be removed
-				if (@base.DeclaringType.IsInterface)
+				// if the type is never instantiated, interfaces will be removed - but only if the optimization is enabled
+				if (@base.DeclaringType.IsInterface && Context.IsOptimizationEnabled (CodeOptimizations.UnusedInterfaces, method.DeclaringType))
 					continue;
 
 				// If the type is marked, we need to keep overrides of abstract members defined in assemblies
@@ -2349,15 +2320,24 @@ namespace Mono.Linker.Steps
 				if (IgnoreScope (@base.DeclaringType.Scope))
 					return true;
 
-				if (IsVirtualNeededByTypeDueToPreservedScope (@base))
+				if (IsMethodNeededByTypeDueToPreservedScope (@base))
 					return true;
 			}
 
 			return false;
 		}
 
-		bool IsVirtualNeededByInstantiatedTypeDueToPreservedScope (MethodDefinition method)
+		/// <summary>
+		/// Returns true if any of the base methods of <paramref name="method" /> is defined in an assembly that is not trimmed (i.e. action!=trim).
+		/// This is meant to be used on methods from a type that is known to be instantiated.
+		/// </summary>
+		/// <remarks>
+		/// This is very similar to <see cref="IsMethodNeededByTypeDueToPreservedScope (MethodDefinition)"/>,
+		///	but will mark methods from an interface defined in a non-link assembly regardless of the optimization, and does not handle static interface methods.
+		/// </remarks>
+		bool IsMethodNeededByInstantiatedTypeDueToPreservedScope (MethodDefinition method)
 		{
+			// Any static interface methods are captured by <see cref="IsVirtualNeededByTypeDueToPreservedScope">, which should be called on all relevant methods so no need to check again here.
 			if (!method.IsVirtual)
 				return false;
 
@@ -2369,7 +2349,7 @@ namespace Mono.Linker.Steps
 				if (IgnoreScope (@base.DeclaringType.Scope))
 					return true;
 
-				if (IsVirtualNeededByTypeDueToPreservedScope (@base))
+				if (IsMethodNeededByTypeDueToPreservedScope (@base))
 					return true;
 			}
 
@@ -2940,15 +2920,24 @@ namespace Mono.Linker.Steps
 			// since that will be different for compiler generated code.
 			var currentOrigin = ScopeStack.CurrentScope.Origin;
 
-			ICustomAttributeProvider? suppressionContextMember = currentOrigin.SuppressionContextMember;
-			if (suppressionContextMember is MethodDefinition &&
-				Annotations.IsMethodInRequiresUnreferencedCodeScope ((MethodDefinition) suppressionContextMember))
-				return true;
-
 			ICustomAttributeProvider? originMember = currentOrigin.Provider;
-			if (originMember is MethodDefinition && suppressionContextMember != originMember &&
+			if (originMember == null)
+				return false;
+
+			if (originMember is MethodDefinition &&
 				Annotations.IsMethodInRequiresUnreferencedCodeScope ((MethodDefinition) originMember))
 				return true;
+
+			if (originMember is not IMemberDefinition member)
+				return false;
+
+			MethodDefinition? owningMethod;
+			while (Context.CompilerGeneratedState.TryGetOwningMethodForCompilerGeneratedMember (member, out owningMethod)) {
+				Debug.Assert (owningMethod != member);
+				if (Annotations.IsMethodInRequiresUnreferencedCodeScope (owningMethod))
+					return true;
+				member = owningMethod;
+			}
 
 			return false;
 		}
@@ -3148,7 +3137,7 @@ namespace Mono.Linker.Steps
 		protected virtual IEnumerable<MethodDefinition> GetRequiredMethodsForInstantiatedType (TypeDefinition type)
 		{
 			foreach (var method in type.Methods) {
-				if (IsVirtualNeededByInstantiatedTypeDueToPreservedScope (method))
+				if (IsMethodNeededByInstantiatedTypeDueToPreservedScope (method))
 					yield return method;
 			}
 		}

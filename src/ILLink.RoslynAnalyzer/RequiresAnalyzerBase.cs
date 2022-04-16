@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Immutable;
@@ -263,15 +263,9 @@ namespace ILLink.RoslynAnalyzer
 					SymbolAnalysisContext symbolAnalysisContext,
 					INamedTypeSymbol type)
 				{
-					ImmutableArray<INamedTypeSymbol> interfaces = type.Interfaces;
-					foreach (INamespaceOrTypeSymbol iface in interfaces) {
-						var members = iface.GetMembers ();
-						foreach (var member in members) {
-							var implementation = type.FindImplementationForInterfaceMember (member);
-							// In case the implementation is null because the user code is missing an implementation, we dont provide diagnostics.
-							// The compiler will provide an error
-							if (implementation != null && HasMismatchingAttributes (member, implementation))
-								ReportMismatchInAttributesDiagnostic (symbolAnalysisContext, implementation, member, isInterface: true);
+					foreach (var memberpair in type.GetMemberInterfaceImplementationPairs ()) {
+						if (HasMismatchingAttributes (memberpair.InterfaceMember, memberpair.ImplementationMember)) {
+							ReportMismatchInAttributesDiagnostic (symbolAnalysisContext, memberpair.ImplementationMember, memberpair.InterfaceMember, isInterface: true);
 						}
 					}
 				}

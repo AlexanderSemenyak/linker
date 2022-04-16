@@ -1,7 +1,8 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Collections.Immutable;
+using System.Linq;
 using ILLink.RoslynAnalyzer.DataFlow;
 using ILLink.Shared.DataFlow;
 using ILLink.Shared.TrimAnalysis;
@@ -22,12 +23,20 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 	{
 		public readonly TrimAnalysisPatternStore TrimAnalysisPatterns;
 
+		readonly ValueSetLattice<SingleValue> _multiValueLattice;
+
+		// Limit tracking array values to 32 values for performance reasons.
+		// There are many arrays much longer than 32 elements in .NET,
+		// but the interesting ones for the linker are nearly always less than 32 elements.
+		private const int MaxTrackedArrayValues = 32;
+
 		public TrimAnalysisVisitor (
 			LocalStateLattice<MultiValue, ValueSetLattice<SingleValue>> lattice,
 			OperationBlockAnalysisContext context
 		) : base (lattice, context)
 		{
-			TrimAnalysisPatterns = new TrimAnalysisPatternStore (lattice.Lattice.ValueLattice);
+			_multiValueLattice = lattice.Lattice.ValueLattice;
+			TrimAnalysisPatterns = new TrimAnalysisPatternStore (_multiValueLattice);
 		}
 
 		// Override visitor methods to create tracked values when visiting operations
@@ -35,6 +44,51 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 		// - parameters
 		// - 'this' parameter (for annotated methods)
 		// - field reference
+
+		public override MultiValue Visit (IOperation? operation, StateValue argument)
+		{
+			var returnValue = base.Visit (operation, argument);
+
+			// If the return value is empty (TopValue basically) and the Operation tree
+			// reports it as having a constant value, use that as it will automatically cover
+			// cases we don't need/want to handle.
+			if (operation != null && returnValue.IsEmpty () && operation.ConstantValue.HasValue) {
+				object? constantValue = operation.ConstantValue.Value;
+				if (constantValue == null)
+					return NullValue.Instance;
+				else if (operation.Type?.SpecialType == SpecialType.System_String && constantValue is string stringConstantValue)
+					return new KnownStringValue (stringConstantValue);
+				else if (operation.Type?.TypeKind == TypeKind.Enum && constantValue is int enumConstantValue)
+					return new ConstIntValue (enumConstantValue);
+				else if (operation.Type?.SpecialType == SpecialType.System_Int32 && constantValue is int intConstantValue)
+					return new ConstIntValue (intConstantValue);
+			}
+
+			return returnValue;
+		}
+
+		public override MultiValue VisitArrayCreation (IArrayCreationOperation operation, StateValue state)
+		{
+			var value = base.VisitArrayCreation (operation, state);
+
+			// Don't track multi-dimensional arrays
+			if (operation.DimensionSizes.Length != 1)
+				return TopValue;
+
+			// Don't track large arrays for performance reasons
+			if (operation.Initializer?.ElementValues.Length >= MaxTrackedArrayValues)
+				return TopValue;
+
+			var arrayValue = ArrayValue.Create (Visit (operation.DimensionSizes[0], state));
+			var elements = operation.Initializer?.ElementValues.Select (val => Visit (val, state)).ToArray () ?? System.Array.Empty<MultiValue> ();
+			foreach (var array in arrayValue.Cast<ArrayValue> ()) {
+				for (int i = 0; i < elements.Length; i++) {
+					array.IndexValues.Add (i, elements[i]);
+				}
+			}
+
+			return arrayValue;
+		}
 
 		public override MultiValue VisitConversion (IConversionOperation operation, StateValue state)
 		{
@@ -70,22 +124,55 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 
 		public override MultiValue VisitFieldReference (IFieldReferenceOperation fieldRef, StateValue state)
 		{
-			return fieldRef.Field.Type.IsTypeInterestingForDataflow () ? new FieldValue (fieldRef.Field) : TopValue;
-		}
+			var field = fieldRef.Field;
+			switch (field.Name) {
+			case "EmptyTypes" when field.ContainingType.IsTypeOf ("System", "Type"): {
+					return ArrayValue.Create (0);
+				}
+			case "Empty" when field.ContainingType.IsTypeOf ("System", "String"): {
+					return new KnownStringValue (string.Empty);
+				}
+			}
 
-		public override MultiValue VisitTypeOf (ITypeOfOperation typeOfOperation, StateValue state)
-		{
-			if (typeOfOperation.TypeOperand is ITypeParameterSymbol typeParameter)
-				return new GenericParameterValue (typeParameter);
-			else if (typeOfOperation.TypeOperand is INamedTypeSymbol namedType)
-				return new SystemTypeValue (new TypeProxy (namedType));
+			if (fieldRef.Field.Type.IsTypeInterestingForDataflow ())
+				return new FieldValue (fieldRef.Field);
 
 			return TopValue;
 		}
 
-		public override MultiValue VisitLiteral (ILiteralOperation literalOperation, StateValue state)
+		public override MultiValue VisitTypeOf (ITypeOfOperation typeOfOperation, StateValue state)
 		{
-			return literalOperation.ConstantValue.Value == null ? NullValue.Instance : TopValue;
+			return SingleValueExtensions.FromTypeSymbol (typeOfOperation.TypeOperand) ?? TopValue;
+		}
+
+		public override MultiValue VisitBinaryOperator (IBinaryOperation operation, StateValue argument)
+		{
+			if (!operation.ConstantValue.HasValue && // Optimization - if there is already a constant value available, rely on the Visit(IOperation) instead
+				operation.OperatorKind == BinaryOperatorKind.Or &&
+				operation.OperatorMethod is null &&
+				(operation.Type?.TypeKind == TypeKind.Enum || operation.Type?.SpecialType == SpecialType.System_Int32)) {
+				MultiValue leftValue = Visit (operation.LeftOperand, argument);
+				MultiValue rightValue = Visit (operation.RightOperand, argument);
+
+				MultiValue result = TopValue;
+				foreach (var left in leftValue) {
+					if (left is UnknownValue)
+						result = _multiValueLattice.Meet (result, left);
+					else if (left is ConstIntValue leftConstInt) {
+						foreach (var right in rightValue) {
+							if (right is UnknownValue)
+								result = _multiValueLattice.Meet (result, right);
+							else if (right is ConstIntValue rightConstInt) {
+								result = _multiValueLattice.Meet (result, new ConstIntValue (leftConstInt.Value | rightConstInt.Value));
+							}
+						}
+					}
+				}
+
+				return result;
+			}
+
+			return base.VisitBinaryOperator (operation, argument);
 		}
 
 		// Override handlers for situations where annotated locations may be involved in reflection access:
@@ -106,9 +193,37 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 			);
 		}
 
-		public override MultiValue HandleArrayElementAccess (IOperation arrayReferene)
+		public override MultiValue HandleArrayElementRead (MultiValue arrayValue, MultiValue indexValue, IOperation operation)
 		{
+			if (arrayValue.AsSingleValue () is not ArrayValue arr)
+				return UnknownValue.Instance;
+
+			if (indexValue.AsConstInt () is not int index)
+				return UnknownValue.Instance;
+
+			if (arr.TryGetValueByIndex (index, out var elementValue))
+				return elementValue;
+
 			return UnknownValue.Instance;
+		}
+
+		public override void HandleArrayElementWrite (MultiValue arrayValue, MultiValue indexValue, MultiValue valueToWrite, IOperation operation)
+		{
+			int? index = indexValue.AsConstInt ();
+			foreach (var arraySingleValue in arrayValue) {
+				if (arraySingleValue is ArrayValue arr) {
+					if (index == null) {
+						// Reset the array to all unknowns - since we don't know which index is being assigned
+						arr.IndexValues.Clear ();
+					} else {
+						if (arr.IndexValues.TryGetValue (index.Value, out _)) {
+							arr.IndexValues[index.Value] = valueToWrite;
+						} else if (arr.IndexValues.Count < MaxTrackedArrayValues) {
+							arr.IndexValues[index.Value] = valueToWrite;
+						}
+					}
+				}
+			}
 		}
 
 		public override MultiValue HandleMethodCall (IMethodSymbol calledMethod, MultiValue instance, ImmutableArray<MultiValue> arguments, IOperation operation)
@@ -125,11 +240,20 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 
 			var diagnosticContext = DiagnosticContext.CreateDisabled ();
 			var handleCallAction = new HandleCallAction (diagnosticContext, Context.OwningSymbol, operation);
-			if (!handleCallAction.Invoke (new MethodProxy (calledMethod), instance, arguments, out MultiValue methodReturnValue)) {
-				if (!calledMethod.ReturnsVoid && calledMethod.ReturnType.IsTypeInterestingForDataflow ())
-					methodReturnValue = new MethodReturnValue (calledMethod);
-				else
-					methodReturnValue = TopValue;
+			if (!handleCallAction.Invoke (new MethodProxy (calledMethod), instance, arguments, out MultiValue methodReturnValue, out var intrinsicId)) {
+				switch (intrinsicId) {
+				case IntrinsicId.Array_Empty:
+					methodReturnValue = ArrayValue.Create (0);
+					break;
+
+				default:
+					if (!calledMethod.ReturnsVoid && calledMethod.ReturnType.IsTypeInterestingForDataflow ())
+						methodReturnValue = new MethodReturnValue (calledMethod);
+					else
+						methodReturnValue = TopValue;
+
+					break;
+				}
 			}
 
 			TrimAnalysisPatterns.Add (new TrimAnalysisMethodCallPattern (
@@ -138,6 +262,13 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 				arguments,
 				operation,
 				Context.OwningSymbol));
+
+			foreach (var argument in arguments) {
+				foreach (var argumentValue in argument) {
+					if (argumentValue is ArrayValue arrayValue)
+						arrayValue.IndexValues.Clear ();
+				}
+			}
 
 			return methodReturnValue;
 		}

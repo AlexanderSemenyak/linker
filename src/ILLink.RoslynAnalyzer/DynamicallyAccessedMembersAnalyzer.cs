@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -10,7 +10,6 @@ using ILLink.RoslynAnalyzer.TrimAnalysis;
 using ILLink.Shared;
 using ILLink.Shared.DataFlow;
 using ILLink.Shared.TrimAnalysis;
-using ILLink.Shared.TypeSystemProxy;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -37,7 +36,12 @@ namespace ILLink.RoslynAnalyzer
 			diagDescriptorsArrayBuilder.Add (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersFieldAccessedViaReflection));
 			diagDescriptorsArrayBuilder.Add (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersMethodAccessedViaReflection));
 			diagDescriptorsArrayBuilder.Add (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.UnrecognizedTypeInRuntimeHelpersRunClassConstructor));
-
+			diagDescriptorsArrayBuilder.Add (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersMismatchOnMethodReturnValueBetweenOverrides));
+			diagDescriptorsArrayBuilder.Add (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersMismatchOnMethodParameterBetweenOverrides));
+			diagDescriptorsArrayBuilder.Add (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersMismatchOnGenericParameterBetweenOverrides));
+			diagDescriptorsArrayBuilder.Add (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersMismatchOnImplicitThisBetweenOverrides));
+			diagDescriptorsArrayBuilder.Add (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersConflictsBetweenPropertyAndAccessor));
+			diagDescriptorsArrayBuilder.Add (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.PropertyAccessorParameterInLinqExpressionsCannotBeStaticallyDetermined));
 			return diagDescriptorsArrayBuilder.ToImmutable ();
 
 			void AddRange (DiagnosticId first, DiagnosticId last)
@@ -102,7 +106,12 @@ namespace ILLink.RoslynAnalyzer
 				}, SyntaxKind.GenericName);
 				context.RegisterSymbolAction (context => {
 					VerifyMemberOnlyApplyToTypesOrStrings (context, context.Symbol);
+					VerifyDamOnPropertyAndAccessorMatch (context, (IMethodSymbol) context.Symbol);
+					VerifyDamOnDerivedAndBaseMethodsMatch (context, (IMethodSymbol) context.Symbol);
 				}, SymbolKind.Method);
+				context.RegisterSymbolAction (context => {
+					VerifyDamOnInterfaceAndImplementationMethodsMatch (context, (INamedTypeSymbol) context.Symbol);
+				}, SymbolKind.NamedType);
 				context.RegisterSymbolAction (context => {
 					VerifyMemberOnlyApplyToTypesOrStrings (context, context.Symbol);
 				}, SymbolKind.Property);
@@ -122,22 +131,31 @@ namespace ILLink.RoslynAnalyzer
 				&& context.ContainingSymbol.IsInRequiresUnreferencedCodeAttributeScope ())
 				return;
 
+			var symbol = context.SemanticModel.GetSymbolInfo (context.Node).Symbol;
+
+			// Avoid unnecesary execution if not NamedType or Method
+			if (symbol is not INamedTypeSymbol && symbol is not IMethodSymbol)
+				return;
+
+			// Members inside nameof or cref comments, commonly used to access the string value of a variable, type, or a memeber,
+			// can generate diagnostics warnings, which can be noisy and unhelpful. 
+			// Walking the node heirarchy to check if the member is inside a nameof/cref to not generate diagnostics
+			var parentNode = context.Node;
+			while (parentNode != null) {
+				if (parentNode is InvocationExpressionSyntax invocationExpression &&
+					invocationExpression.Expression is IdentifierNameSyntax ident1 &&
+					ident1.Identifier.ValueText.Equals ("nameof"))
+					return;
+				else if (parentNode is NameMemberCrefSyntax)
+					return;
+
+				parentNode = parentNode.Parent;
+			}
+
 			ImmutableArray<ITypeParameterSymbol> typeParams = default;
 			ImmutableArray<ITypeSymbol> typeArgs = default;
-			var symbol = context.SemanticModel.GetSymbolInfo (context.Node).Symbol;
 			switch (symbol) {
 			case INamedTypeSymbol type:
-				// INamedTypeSymbol inside nameof, commonly used to access the string value of a variable, type, or a memeber,
-				// can generate diagnostics warnings, which can be noisy and unhelpful. 
-				// Walking the node heirarchy to check if INamedTypeSymbol is inside a nameof to not generate diagnostics
-				var parentNode = context.Node;
-				while (parentNode != null) {
-					if (parentNode is InvocationExpressionSyntax invocationExpression && invocationExpression.Expression is IdentifierNameSyntax ident1) {
-						if (ident1.Identifier.ValueText.Equals ("nameof"))
-							return;
-					}
-					parentNode = parentNode.Parent;
-				}
 				typeParams = type.TypeParameters;
 				typeArgs = type.TypeArguments;
 				break;
@@ -155,26 +173,12 @@ namespace ILLink.RoslynAnalyzer
 					// These uninstantiated generics should not produce warnings.
 					if (typeArgs[i].Kind == SymbolKind.ErrorType)
 						continue;
-					var sourceValue = GetTypeValueNodeFromGenericArgument (context, typeArgs[i]);
+					var sourceValue = SingleValueExtensions.FromTypeSymbol (typeArgs[i])!;
 					var targetValue = new GenericParameterValue (typeParams[i]);
 					foreach (var diagnostic in GetDynamicallyAccessedMembersDiagnostics (sourceValue, targetValue, context.Node.GetLocation ()))
 						context.ReportDiagnostic (diagnostic);
 				}
 			}
-		}
-
-		static SingleValue GetTypeValueNodeFromGenericArgument (SyntaxNodeAnalysisContext context, ITypeSymbol type)
-		{
-			return type.Kind switch {
-				SymbolKind.TypeParameter => new GenericParameterValue ((ITypeParameterSymbol) type),
-				// Technically this should be a new value node type as it's not a System.Type instance representation, but just the generic parameter
-				// That said we only use it to perform the dynamically accessed members checks and for that purpose treating it as System.Type is perfectly valid.
-				SymbolKind.NamedType => new SystemTypeValue (new TypeProxy ((INamedTypeSymbol) type)),
-				SymbolKind.ErrorType => UnknownValue.Instance,
-				SymbolKind.ArrayType => new SystemTypeValue (new TypeProxy (context.Compilation.GetTypeByMetadataName ("System.Array")!)),
-				// What about things like PointerType and so on. Linker treats these as "named types" since it can resolve them to concrete type
-				_ => throw new NotImplementedException ()
-			};
 		}
 
 		static IEnumerable<Diagnostic> GetDynamicallyAccessedMembersDiagnostics (SingleValue sourceValue, SingleValue targetValue, Location location)
@@ -206,6 +210,76 @@ namespace ILLink.RoslynAnalyzer
 				}
 			} else if (member is IPropertySymbol property && property.GetDynamicallyAccessedMemberTypes () != DynamicallyAccessedMemberTypes.None && !property.Type.IsTypeInterestingForDataflow ()) {
 				context.ReportDiagnostic (Diagnostic.Create (DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersOnPropertyCanOnlyApplyToTypesOrStrings), member.Locations[0], member.GetDisplayName ()));
+			}
+		}
+
+		static void VerifyDamOnDerivedAndBaseMethodsMatch (SymbolAnalysisContext context, IMethodSymbol methodSymbol)
+		{
+			if (methodSymbol.TryGetOverriddenMember (out var overriddenSymbol) && overriddenSymbol is IMethodSymbol overriddenMethod
+				&& context.Symbol is IMethodSymbol method) {
+				VerifyDamOnMethodsMatch (context, method, overriddenMethod);
+			}
+		}
+
+		static void VerifyDamOnMethodsMatch (SymbolAnalysisContext context, IMethodSymbol method, IMethodSymbol overriddenMethod)
+		{
+			if (FlowAnnotations.GetMethodReturnValueAnnotation (method) != FlowAnnotations.GetMethodReturnValueAnnotation (overriddenMethod))
+				context.ReportDiagnostic (Diagnostic.Create (
+					DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersMismatchOnMethodReturnValueBetweenOverrides),
+					method.Locations[0], method.GetDisplayName (), overriddenMethod.GetDisplayName ()));
+
+			for (int i = 0; i < method.Parameters.Length; i++) {
+				if (FlowAnnotations.GetMethodParameterAnnotation (method.Parameters[i]) != FlowAnnotations.GetMethodParameterAnnotation (overriddenMethod.Parameters[i]))
+					context.ReportDiagnostic (Diagnostic.Create (
+						DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersMismatchOnMethodParameterBetweenOverrides),
+						method.Parameters[i].Locations[0],
+						method.Parameters[i].GetDisplayName (), method.GetDisplayName (), overriddenMethod.Parameters[i].GetDisplayName (), overriddenMethod.GetDisplayName ()));
+			}
+
+			for (int i = 0; i < method.TypeParameters.Length; i++) {
+				if (method.TypeParameters[i].GetDynamicallyAccessedMemberTypes () != overriddenMethod.TypeParameters[i].GetDynamicallyAccessedMemberTypes ())
+					context.ReportDiagnostic (Diagnostic.Create (
+						DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersMismatchOnGenericParameterBetweenOverrides),
+						method.TypeParameters[i].Locations[0],
+						method.TypeParameters[i].GetDisplayName (), method.GetDisplayName (),
+						overriddenMethod.TypeParameters[i].GetDisplayName (), overriddenMethod.GetDisplayName ()));
+			}
+
+			if (!method.IsStatic && method.GetDynamicallyAccessedMemberTypes () != overriddenMethod.GetDynamicallyAccessedMemberTypes ())
+				context.ReportDiagnostic (Diagnostic.Create (
+					DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersMismatchOnImplicitThisBetweenOverrides),
+					method.Locations[0],
+					method.GetDisplayName (), overriddenMethod.GetDisplayName ()));
+		}
+
+		static void VerifyDamOnInterfaceAndImplementationMethodsMatch (SymbolAnalysisContext context, INamedTypeSymbol type)
+		{
+			foreach (var (interfaceMember, implementationMember) in type.GetMemberInterfaceImplementationPairs ()) {
+				if (implementationMember is IMethodSymbol implementationMethod
+					&& interfaceMember is IMethodSymbol interfaceMethod)
+					VerifyDamOnMethodsMatch (context, implementationMethod, interfaceMethod);
+			}
+		}
+
+		static void VerifyDamOnPropertyAndAccessorMatch (SymbolAnalysisContext context, IMethodSymbol methodSymbol)
+		{
+			if ((methodSymbol.MethodKind != MethodKind.PropertyGet && methodSymbol.MethodKind != MethodKind.PropertySet)
+				|| (methodSymbol.AssociatedSymbol?.GetDynamicallyAccessedMemberTypes () == DynamicallyAccessedMemberTypes.None))
+				return;
+
+			// None on the return type of 'get' matches unannotated
+			if (methodSymbol.MethodKind == MethodKind.PropertyGet
+				&& methodSymbol.GetDynamicallyAccessedMemberTypesOnReturnType () != DynamicallyAccessedMemberTypes.None
+				// None on parameter of 'set' matches unannotated
+				|| methodSymbol.MethodKind == MethodKind.PropertySet
+				&& methodSymbol.Parameters[0].GetDynamicallyAccessedMemberTypes () != DynamicallyAccessedMemberTypes.None) {
+				context.ReportDiagnostic (Diagnostic.Create (
+					DiagnosticDescriptors.GetDiagnosticDescriptor (DiagnosticId.DynamicallyAccessedMembersConflictsBetweenPropertyAndAccessor),
+					methodSymbol.AssociatedSymbol!.Locations[0],
+					methodSymbol.AssociatedSymbol!.GetDisplayName (),
+					methodSymbol.GetDisplayName ()
+				));
+				return;
 			}
 		}
 	}

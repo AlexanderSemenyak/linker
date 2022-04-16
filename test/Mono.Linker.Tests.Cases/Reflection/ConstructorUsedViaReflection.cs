@@ -20,6 +20,8 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			GetConstructor_BindingAttr_Types.Test ();
 #endif
 			TestNullType ();
+			TestNoValue ();
+			TestNullArguments ();
 			TestDataFlowType ();
 			IfElse.TestIfElse (true);
 		}
@@ -50,12 +52,28 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			}
 
 			[Kept]
+			class CtorWithRUC
+			{
+				[Kept]
+				[KeptAttributeAttribute (typeof (RequiresUnreferencedCodeAttribute))]
+				[RequiresUnreferencedCode (nameof (CtorWithRUC) + "()")]
+				public CtorWithRUC () { }
+
+				[Kept]
+				[KeptAttributeAttribute (typeof (RequiresUnreferencedCodeAttribute))]
+				[RequiresUnreferencedCode (nameof (CtorWithRUC) + "(int)")]
+				public CtorWithRUC (int i) { }
+			}
+
+			[Kept]
 			public static void Test ()
 			{
 				TestConstructorWithTypes_EmptyTypes ();
 				TestConstructorWithTypes_NonEmptyTypes ();
 				TestConstructorWithTypes_EmptyTypes_DataFlow (typeof (TestType));
 				TestConstructorWithTypes_NonEmptyTypes_DataFlow (typeof (TestType));
+				TestConstructorWithTypes_EmptyTypes_RUCOnCtor ();
+				TestConstructorWithTypes_NonEmptyTypes_RUCOnCtor ();
 			}
 
 			[Kept]
@@ -91,6 +109,21 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			{
 				var constructor = type.GetConstructor (new Type[] { typeof (int) });
 				constructor.Invoke (null, new object[] { null });
+			}
+
+			[Kept]
+			[ExpectedWarning ("IL2026", nameof (CtorWithRUC) + "()")]
+			static void TestConstructorWithTypes_EmptyTypes_RUCOnCtor ()
+			{
+				typeof (CtorWithRUC).GetConstructor (new Type[] { });
+			}
+
+			[Kept]
+			[ExpectedWarning ("IL2026", nameof (CtorWithRUC) + "()")]
+			[ExpectedWarning ("IL2026", nameof (CtorWithRUC) + "(int)")]
+			static void TestConstructorWithTypes_NonEmptyTypes_RUCOnCtor ()
+			{
+				typeof (CtorWithRUC).GetConstructor (new Type[] { typeof (int) });
 			}
 		}
 
@@ -262,6 +295,20 @@ namespace Mono.Linker.Tests.Cases.Reflection
 		{
 			Type type = null;
 			var constructor = type.GetConstructor (new Type[] { });
+		}
+
+		[Kept]
+		static void TestNoValue ()
+		{
+			Type t = null;
+			Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+			var constructor = noValue.GetConstructor (new Type[] { });
+		}
+
+		[Kept]
+		static void TestNullArguments ()
+		{
+			var constrctor = typeof (TestType).GetConstructor (null);
 		}
 
 		[Kept]

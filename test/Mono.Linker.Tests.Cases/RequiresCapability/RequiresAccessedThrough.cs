@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -39,7 +39,7 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
 		{
 		}
 
-		[ExpectedWarning ("IL2026", "--RequiresOnlyThroughReflection--", ProducedBy = ProducedBy.Trimmer)]
+		[ExpectedWarning ("IL2026", "--RequiresOnlyThroughReflection--")]
 		static void TestRequiresOnlyThroughReflection ()
 		{
 			typeof (RequiresAccessedThrough)
@@ -54,7 +54,7 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
 			{
 			}
 
-			[ExpectedWarning ("IL2026", "--GenericType.RequiresOnlyThroughReflection--", ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2026", "--GenericType.RequiresOnlyThroughReflection--")]
 			public static void Test ()
 			{
 				typeof (AccessedThroughReflectionOnGenericType<T>)
