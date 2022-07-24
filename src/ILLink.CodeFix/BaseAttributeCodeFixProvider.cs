@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Linq;
@@ -32,17 +32,22 @@ namespace ILLink.CodeFix
 		protected async Task BaseRegisterCodeFixesAsync (CodeFixContext context)
 		{
 			var document = context.Document;
-			var root = await document.GetSyntaxRootAsync (context.CancellationToken).ConfigureAwait (false);
+			if (await document.GetSyntaxRootAsync (context.CancellationToken).ConfigureAwait (false) is not { } root)
+				return;
 			var diagnostic = context.Diagnostics.First ();
-			SyntaxNode targetNode = root!.FindNode (diagnostic.Location.SourceSpan);
+			SyntaxNode targetNode = root.FindNode (diagnostic.Location.SourceSpan, getInnermostNodeForTie: true);
 			if (FindAttributableParent (targetNode, AttributableParentTargets) is not SyntaxNode attributableNode)
 				return;
 
-			var model = await document.GetSemanticModelAsync (context.CancellationToken).ConfigureAwait (false);
-			var targetSymbol = model!.GetSymbolInfo (targetNode).Symbol!;
+			if (await document.GetSemanticModelAsync (context.CancellationToken).ConfigureAwait (false) is not { } model)
+				return;
+			if (model.GetSymbolInfo (targetNode).Symbol is not { } targetSymbol)
+				return;
+			if (model.Compilation.GetTypeByMetadataName (FullyQualifiedAttributeName) is not { } attributeSymbol)
+				return;
+			// N.B. May be null for FieldDeclaration, since field declarations can declare multiple variables
+			var attributableSymbol = model.GetDeclaredSymbol (attributableNode);
 
-			var attributableSymbol = model!.GetDeclaredSymbol (attributableNode)!;
-			var attributeSymbol = model!.Compilation.GetTypeByMetadataName (FullyQualifiedAttributeName)!;
 			var attributeArguments = GetAttributeArguments (attributableSymbol, targetSymbol, SyntaxGenerator.GetGenerator (document), diagnostic);
 			var codeFixTitle = CodeFixTitle.ToString ();
 
@@ -104,7 +109,7 @@ namespace ILLink.CodeFix
 		}
 
 		protected abstract SyntaxNode[] GetAttributeArguments (
-			ISymbol attributableSymbol,
+			ISymbol? attributableSymbol,
 			ISymbol targetSymbol,
 			SyntaxGenerator syntaxGenerator,
 			Diagnostic diagnostic);

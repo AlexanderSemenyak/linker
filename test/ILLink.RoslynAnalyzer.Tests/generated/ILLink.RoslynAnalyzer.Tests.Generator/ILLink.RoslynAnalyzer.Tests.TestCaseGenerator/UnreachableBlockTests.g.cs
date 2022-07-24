@@ -20,6 +20,18 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task ComplexConditionsOptimized ()
+		{
+			return RunTest (allowMissingWarnings: true);
+		}
+
+		[Fact]
+		public Task DataFlowRelated ()
+		{
+			return RunTest (allowMissingWarnings: true);
+		}
+
+		[Fact]
 		public Task DeadVariables ()
 		{
 			return RunTest (allowMissingWarnings: true);
@@ -38,6 +50,12 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task MethodArgumentPropagation ()
+		{
+			return RunTest (allowMissingWarnings: true);
+		}
+
+		[Fact]
 		public Task MethodWithParametersSubstitutions ()
 		{
 			return RunTest (allowMissingWarnings: true);
@@ -50,7 +68,19 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task ReplacedJumpTarget ()
+		{
+			return RunTest (allowMissingWarnings: true);
+		}
+
+		[Fact]
 		public Task ReplacedReturns ()
+		{
+			return RunTest (allowMissingWarnings: true);
+		}
+
+		[Fact]
+		public Task ResultInliningNotPossible ()
 		{
 			return RunTest (allowMissingWarnings: true);
 		}

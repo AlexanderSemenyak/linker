@@ -1,3 +1,6 @@
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 using System;
 using System.Diagnostics.CodeAnalysis;
 using ILLink.Shared;
@@ -11,7 +14,7 @@ namespace Mono.Linker
 	/// CustomAttribute for dependency tracing. It is also a place for helper
 	/// methods related to the attribute.
 	[System.AttributeUsage (System.AttributeTargets.Constructor | System.AttributeTargets.Field | System.AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
-	internal class DynamicDependency : Attribute
+	internal sealed class DynamicDependency : Attribute
 	{
 		public CustomAttribute? OriginalAttribute { get; private set; }
 		public DynamicDependency (string memberSignature)

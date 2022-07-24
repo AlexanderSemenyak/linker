@@ -18,6 +18,8 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			Branch_NullValueNode ();
 			Branch_MethodParameterValueNode (typeof (C));
 			Branch_UnrecognizedPatterns ();
+			TestNullType ();
+			TestNoValue ();
 		}
 
 		[Kept]
@@ -51,13 +53,29 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			Expression.New (T);
 		}
 
-		[ExpectedWarning ("IL2072", nameof (Expression) + "." + nameof (Expression.New), "'System." + nameof (Type) + "." + nameof (Type.GetType))]
 		[ExpectedWarning ("IL2072", nameof (Expression) + "." + nameof (Expression.New), nameof (ExpressionNewType) + "." + nameof (ExpressionNewType.GetType))]
 		[Kept]
 		static void Branch_UnrecognizedPatterns ()
 		{
+			// Note that "RemovedType" will not resolve here since the type declared below with the same name is nested type and so its real name is "ExpressionNewType+RemovedType"
+			// This should not warn - we choose to not warn if we can't resolve a type (and anything which it's used for)
 			Expression.New (Type.GetType ("RemovedType"));
 			Expression.New (GetType ());
+		}
+
+		[Kept]
+		static void TestNullType ()
+		{
+			Type t = null;
+			Expression.New (t);
+		}
+
+		[Kept]
+		static void TestNoValue ()
+		{
+			Type t = null;
+			Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+			Expression.New (noValue);
 		}
 
 		#region Helpers

@@ -1,4 +1,7 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+using System.Diagnostics.CodeAnalysis;
 using Mono.Cecil;
 
 namespace Mono.Linker
@@ -94,11 +97,6 @@ namespace Mono.Linker
 				di.Scope.Constants.Clear ();
 				di.Scope = null;
 			}
-		}
-
-		public static bool HasImplicitThis (this MethodDefinition method)
-		{
-			return method.HasThis && !method.ExplicitThis;
 		}
 	}
 }

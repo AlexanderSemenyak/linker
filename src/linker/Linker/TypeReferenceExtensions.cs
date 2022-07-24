@@ -1,8 +1,12 @@
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using ILLink.Shared.TypeSystemProxy;
 using Mono.Cecil;
 
 namespace Mono.Linker
@@ -358,6 +362,22 @@ namespace Mono.Linker
 			return tr.Name == type.Name && tr.Namespace == tr.Namespace;
 		}
 
+		public static bool IsTypeOf (this TypeReference tr, WellKnownType type)
+		{
+			return tr.TryGetWellKnownType () == type;
+		}
+
+		public static WellKnownType? TryGetWellKnownType (this TypeReference tr)
+		{
+			return tr.MetadataType switch {
+				MetadataType.String => WellKnownType.System_String,
+				MetadataType.Object => WellKnownType.System_Object,
+				MetadataType.Void => WellKnownType.System_Void,
+				// TypeReferences of System.Array do not have a MetadataType of MetadataType.Array -- use string checking instead
+				MetadataType.Array or _ => WellKnownTypeExtensions.GetWellKnownType (tr.Namespace, tr.Name)
+			};
+		}
+
 		public static bool IsSubclassOf (this TypeReference type, string ns, string name, ITryResolveMetadata resolver)
 		{
 			TypeDefinition? baseType = resolver.TryResolve (type);
@@ -376,6 +396,22 @@ namespace Mono.Linker
 				type = ((IModifierType) type).ElementType;
 			}
 			return type;
+		}
+
+		// Array types that are dynamically accessed should resolve to System.Array instead of its element type - which is what Cecil resolves to.
+		// Any data flow annotations placed on a type parameter which receives an array type apply to the array itself. None of the members in its
+		// element type should be marked.
+		public static TypeDefinition? ResolveToTypeDefinition (this TypeReference typeReference, LinkContext context)
+			=> typeReference is ArrayType
+				? BCL.FindPredefinedType (WellKnownType.System_Array, context)
+				: context.TryResolve (typeReference);
+
+		public static bool IsByRefOrPointer (this TypeReference typeReference)
+		{
+			return typeReference.WithoutModifiers ().MetadataType switch {
+				MetadataType.Pointer or MetadataType.ByReference => true,
+				_ => false,
+			};
 		}
 	}
 }

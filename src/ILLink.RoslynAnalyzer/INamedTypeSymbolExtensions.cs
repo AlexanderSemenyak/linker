@@ -1,7 +1,8 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 
 namespace ILLink.RoslynAnalyzer
@@ -27,6 +28,31 @@ namespace ILLink.RoslynAnalyzer
 			}
 
 			return true;
+		}
+
+		internal static IEnumerable<(ISymbol InterfaceMember, ISymbol ImplementationMember)> GetMemberInterfaceImplementationPairs (this INamedTypeSymbol namedType)
+		{
+			var interfaces = namedType.Interfaces;
+			foreach (INamedTypeSymbol iface in interfaces) {
+				foreach (var pair in GetMatchingMembers (namedType, iface)) {
+					yield return pair;
+				}
+			}
+		}
+
+		private static IEnumerable<(ISymbol InterfaceMember, ISymbol ImplementationMember)> GetMatchingMembers (INamedTypeSymbol implementationSymbol, INamedTypeSymbol interfaceSymbol)
+		{
+			var members = interfaceSymbol.GetMembers ();
+			foreach (ISymbol interfaceMember in members) {
+				if (implementationSymbol.FindImplementationForInterfaceMember (interfaceMember) is ISymbol implementationMember) {
+					yield return (InterfaceMember: interfaceMember, ImplementationMember: implementationMember);
+				}
+			}
+			foreach (var iface in interfaceSymbol.Interfaces) {
+				foreach (var pair in GetMatchingMembers (implementationSymbol, iface)) {
+					yield return pair;
+				}
+			}
 		}
 	}
 }

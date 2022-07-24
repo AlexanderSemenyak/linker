@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -138,6 +141,24 @@ namespace Mono.Linker.Tests.TestCases
 				reader.Read ();
 				reader.Read ();
 				Assert.That (reader.Name, Is.EqualTo ("dependencies"), $"Expected to be at the dependencies element, but the current node name is `{reader.Name}`");
+			}
+		}
+
+		[Test]
+		public void CandumpDependenciesToUncompressedDgml ()
+		{
+			var testcase = CreateIndividualCase (typeof (CanDumpDependenciesToUncompressedDgml));
+			var result = Run (testcase);
+
+			var outputPath = result.OutputAssemblyPath.Parent.Combine ("linker-dependencies.dgml");
+			if (!outputPath.Exists ())
+				Assert.Fail ($"The dependency dump file is missing.  Expected it to exist at {outputPath}");
+
+			using (var reader = new XmlTextReader (outputPath.ToString ())) {
+				reader.Read ();
+				reader.Read ();
+				reader.Read ();
+				Assert.That (reader.Name, Is.EqualTo ("DirectedGraph"), $"Expected to be at the DirectedGraph element, but the current node name is `{reader.Name}`");
 			}
 		}
 

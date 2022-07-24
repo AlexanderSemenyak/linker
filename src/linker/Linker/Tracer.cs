@@ -1,4 +1,7 @@
-﻿//
+﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+//
 // Tracer.cs
 //
 // Author:
@@ -47,6 +50,7 @@ namespace Mono.Linker
 		{
 			if (recorders != null) {
 				foreach (var recorder in recorders) {
+					recorder.FinishRecording ();
 					if (recorder is IDisposable disposableRecorder)
 						disposableRecorder.Dispose ();
 				}

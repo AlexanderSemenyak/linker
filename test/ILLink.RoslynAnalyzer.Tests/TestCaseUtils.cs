@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -25,10 +25,10 @@ namespace ILLink.RoslynAnalyzer.Tests
 		private static readonly string MonoLinkerTestsCases = "Mono.Linker.Tests.Cases";
 
 		public static readonly ReferenceAssemblies Net6PreviewAssemblies =
-			new ReferenceAssemblies (
-				"net6.0",
-				new PackageIdentity ("Microsoft.NETCore.App.Ref", "6.0.0-preview.7.21368.2"),
-				Path.Combine ("ref", "net6.0"))
+		new ReferenceAssemblies (
+				"net7.0",
+				new PackageIdentity ("Microsoft.NETCore.App.Ref", "7.0.0-preview.5.22301.12"),
+				Path.Combine ("ref", "net7.0"))
 			.WithNuGetConfigFilePath (Path.Combine (TestCaseUtils.GetRepoRoot (), "NuGet.config"));
 
 		private static ImmutableArray<MetadataReference> s_net6Refs;
@@ -161,11 +161,7 @@ namespace ILLink.RoslynAnalyzer.Tests
 			var configDirectoryName = "Release";
 #endif
 
-#if NET6_0
-			const string tfm = "net6.0";
-#else
-			const string tfm = "net5.0";
-#endif
+			const string tfm = "net7.0";
 
 			// Working directory is artifacts/bin/Mono.Linker.Tests/<config>/<tfm>
 			var artifactsBinDir = Path.Combine (Directory.GetCurrentDirectory (), "..", "..", "..");

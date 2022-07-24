@@ -1,16 +1,15 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Text;
 using Mono.Linker.Tests.Cases.Expectations.Assertions;
 using Mono.Linker.Tests.Cases.Expectations.Metadata;
 
 namespace Mono.Linker.Tests.Cases.DataFlow
 {
 	[SetupCompileArgument ("/langversion:7.3")]
+	[SetupCompileArgument ("/unsafe")]
 	[Kept]
 	[ExpectedNoWarnings]
 	class ByRefDataflow
@@ -33,6 +32,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 
 			PassRefToField ();
 			PassRefToParameter (null);
+
+			PointerDereference.Test ();
 		}
 
 		[Kept]
@@ -44,9 +45,15 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 		// Trimmer and analyzer use different formats for ref parameters: https://github.com/dotnet/linker/issues/2406
 		[ExpectedWarning ("IL2077", nameof (ByRefDataflow) + "." + nameof (MethodWithRefParameter) + "(Type&)", ProducedBy = ProducedBy.Trimmer)]
 		[ExpectedWarning ("IL2077", nameof (ByRefDataflow) + "." + nameof (MethodWithRefParameter) + "(ref Type)", ProducedBy = ProducedBy.Analyzer)]
+		[ExpectedWarning ("IL2069", nameof (s_typeWithPublicParameterlessConstructor), "parameter 'type'", nameof (MethodWithRefParameter), ProducedBy = ProducedBy.Trimmer)]
+		// MethodWithRefParameter (ref x)
+		[ExpectedWarning ("IL2077", nameof (ByRefDataflow) + "." + nameof (MethodWithRefParameter) + "(Type&)", ProducedBy = ProducedBy.Trimmer)]
+		[ExpectedWarning ("IL2077", nameof (ByRefDataflow) + "." + nameof (MethodWithRefParameter) + "(ref Type)", ProducedBy = ProducedBy.Analyzer)]
 		public static void PassRefToField ()
 		{
 			MethodWithRefParameter (ref s_typeWithPublicParameterlessConstructor);
+			var x = s_typeWithPublicParameterlessConstructor;
+			MethodWithRefParameter (ref x);
 		}
 
 		[Kept]
@@ -97,6 +104,51 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			[Kept]
 			public static void KeptMethod () { }
 			internal static void RemovedMethod () { }
+		}
+
+		[Kept]
+		unsafe class PointerDereference
+		{
+			[Kept]
+			[KeptAttributeAttribute (typeof (RequiresUnreferencedCodeAttribute))]
+			[RequiresUnreferencedCode ("")]
+			static unsafe void IntPtrDeref ()
+			{
+				*_ptr = GetDangerous ();
+			}
+
+			[Kept]
+			static IntPtr* _ptr;
+
+			[Kept]
+			[KeptAttributeAttribute (typeof (RequiresUnreferencedCodeAttribute))]
+			[RequiresUnreferencedCode ("")]
+			static IntPtr GetDangerous () { return IntPtr.Zero; }
+
+			[Kept]
+			[ExpectedWarning ("IL2070")]
+			static unsafe void LocalStackAllocDeref (Type t)
+			{
+				// Code pattern from CoreLib which caused problems in AOT port
+				// so making sure we handle this correctly (that is without failing)
+				int buffSize = 256;
+				byte* stackSpace = stackalloc byte[buffSize];
+				byte* buffer = stackSpace;
+
+				byte* toFree = buffer;
+				buffer = null;
+
+				// IL2070 - this is to make sure that DataFlow ran on the method's body
+				t.GetProperties ();
+			}
+
+			[Kept]
+			[ExpectedWarning ("IL2026")]
+			public static void Test ()
+			{
+				IntPtrDeref ();
+				LocalStackAllocDeref (null);
+			}
 		}
 	}
 }

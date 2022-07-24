@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -48,6 +48,8 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			// Check that this field doesn't produce a warning even if it is kept
 			// for some non-reflection access.
 			var f = AnnotatedPublicMethods.DAMField;
+
+			RUCOnNewSlotVirtualMethodDerivedAnnotated.Test ();
 
 			CompilerGeneratedBackingField.Test ();
 		}
@@ -593,6 +595,46 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			[Kept]
 			[ExpectedWarning ("IL2112", "--AnnotatedRUCPublicMethods--")]
 			public static void StaticMethod () { }
+		}
+
+		[Kept]
+		class RUCOnNewSlotVirtualMethodDerivedAnnotated
+		{
+			[Kept]
+			[KeptMember (".ctor()")]
+			public class Base
+			{
+				[Kept]
+				[KeptAttributeAttribute (typeof (RequiresUnreferencedCodeAttribute))]
+				[RequiresUnreferencedCode ("--RUCOnVirtualMethodDerivedAnnotated.Base.RUCVirtualMethod--")]
+				public virtual void RUCVirtualMethod () { }
+			}
+
+			[Kept]
+			[KeptMember (".ctor()")]
+			[KeptAttributeAttribute (typeof (DynamicallyAccessedMembersAttribute))]
+			[KeptBaseType (typeof (Base))]
+			[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicMethods)]
+			[ExpectedWarning ("IL2113", "--RUCOnVirtualMethodDerivedAnnotated.Base.RUCVirtualMethod--")]
+			// https://github.com/dotnet/linker/issues/2815
+			// [ExpectedWarning ("IL2112", "--RUCOnVirtualMethodDerivedAnnotated.Derived.RUCVirtualMethod--")]
+			public class Derived : Base
+			{
+				[Kept]
+				[KeptAttributeAttribute (typeof (RequiresUnreferencedCodeAttribute))]
+				[RequiresUnreferencedCode ("--RUCOnVirtualMethodDerivedAnnotated.Derived.RUCVirtualMethod--")]
+				public virtual void RUCVirtualMethod () { }
+			}
+
+			[Kept]
+			static Derived _derivedInstance;
+
+			[Kept]
+			public static void Test ()
+			{
+				_derivedInstance = new Derived ();
+				_derivedInstance.GetType ().RequiresPublicMethods ();
+			}
 		}
 
 		[Kept]

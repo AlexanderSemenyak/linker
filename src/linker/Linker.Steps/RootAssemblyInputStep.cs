@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.IO;
 using ILLink.Shared;
@@ -142,6 +142,12 @@ namespace Mono.Linker.Steps
 
 			if ((preserve & TypePreserveMembers.Internal) != 0 && IsTypePrivate (type))
 				preserve_anything &= ~TypePreserveMembers.Internal;
+
+			// Keep all interfaces and interface members in library mode
+			if ((preserve & TypePreserveMembers.Library) != 0 && type.IsInterface) {
+				Annotations.Mark (type, new DependencyInfo (DependencyKind.RootAssembly, type.Module.Assembly), new MessageOrigin (type.Module.Assembly));
+				Annotations.SetPreserve (type, TypePreserve.All);
+			}
 
 			switch (preserve_anything) {
 			case 0:

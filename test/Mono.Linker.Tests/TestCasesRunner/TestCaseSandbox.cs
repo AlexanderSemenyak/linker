@@ -1,3 +1,6 @@
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,7 +19,7 @@ namespace Mono.Linker.Tests.TestCasesRunner
 
 		static NPath GetArtifactsTestPath ()
 		{
-			// Converts paths like /root-folder/linker/artifacts/bin/Mono.Linker.Tests/Debug/net6.0/illink.dll
+			// Converts paths like /root-folder/linker/artifacts/bin/Mono.Linker.Tests/Debug/<tfm>/illink.dll
 			// to /root-folder/linker/artifacts/testcases/
 			string artifacts = Path.GetFullPath (Path.Combine (Path.GetDirectoryName (_linkerAssemblyPath), "..", "..", "..", ".."));
 			string tests = Path.Combine (artifacts, "testcases");

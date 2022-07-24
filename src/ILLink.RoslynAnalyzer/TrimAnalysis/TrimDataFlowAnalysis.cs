@@ -1,7 +1,9 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
 using ILLink.RoslynAnalyzer.DataFlow;
 using ILLink.Shared.DataFlow;
@@ -9,39 +11,28 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.FlowAnalysis;
+using LocalStateValue = ILLink.RoslynAnalyzer.DataFlow.LocalState<
+	ILLink.Shared.DataFlow.ValueSet<ILLink.Shared.DataFlow.SingleValue>>;
+using MultiValue = ILLink.Shared.DataFlow.ValueSet<ILLink.Shared.DataFlow.SingleValue>;
 
 namespace ILLink.RoslynAnalyzer.TrimAnalysis
 {
-	public class TrimDataFlowAnalysis
-		: ForwardDataFlowAnalysis<
-			LocalState<ValueSet<SingleValue>>,
-			LocalDataFlowState<ValueSet<SingleValue>, ValueSetLattice<SingleValue>>,
-			LocalStateLattice<ValueSet<SingleValue>, ValueSetLattice<SingleValue>>,
-			BlockProxy,
-			RegionProxy,
-			ControlFlowGraphProxy,
-			TrimAnalysisVisitor
-		>
+	public class TrimDataFlowAnalysis : LocalDataFlowAnalysis<MultiValue, ValueSetLattice<SingleValue>, TrimAnalysisVisitor>
 	{
-		readonly ControlFlowGraphProxy ControlFlowGraph;
+		public TrimAnalysisPatternStore TrimAnalysisPatterns { get; }
 
-		readonly LocalStateLattice<ValueSet<SingleValue>, ValueSetLattice<SingleValue>> Lattice;
-
-		readonly OperationBlockAnalysisContext Context;
-
-		public TrimDataFlowAnalysis (OperationBlockAnalysisContext context, ControlFlowGraph cfg)
+		public TrimDataFlowAnalysis (OperationBlockAnalysisContext context, IOperation operationBlock)
+			: base (context, operationBlock)
 		{
-			ControlFlowGraph = new ControlFlowGraphProxy (cfg);
-			Lattice = new (new ValueSetLattice<SingleValue> ());
-			Context = context;
+			TrimAnalysisPatterns = new TrimAnalysisPatternStore (Lattice.Lattice.ValueLattice);
 		}
 
-		public TrimAnalysisPatternStore ComputeTrimAnalysisPatterns ()
-		{
-			var visitor = new TrimAnalysisVisitor (Lattice, Context);
-			Fixpoint (ControlFlowGraph, Lattice, visitor);
-			return visitor.TrimAnalysisPatterns;
-		}
+		protected override TrimAnalysisVisitor GetVisitor (
+			IMethodSymbol method,
+			ControlFlowGraph methodCFG,
+			ImmutableDictionary<CaptureId, FlowCaptureKind> lValueFlowCaptures,
+			InterproceduralState<MultiValue, ValueSetLattice<SingleValue>> interproceduralState)
+		 => new (Lattice, method, methodCFG, lValueFlowCaptures, TrimAnalysisPatterns, interproceduralState);
 
 #if DEBUG
 #pragma warning disable CA1805 // Do not initialize unnecessarily
@@ -52,8 +43,16 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 
 		// Set this to true to print out the dataflow states encountered during the analysis.
 		readonly bool showStates = false;
+
+		static readonly TracingType tracingMechanism = Debugger.IsAttached ? TracingType.Debug : TracingType.Console;
 #pragma warning restore CA1805 // Do not initialize unnecessarily
 		ControlFlowGraphProxy cfg;
+
+		private enum TracingType
+		{
+			Console,
+			Debug
+		}
 
 		public override void TraceStart (ControlFlowGraphProxy cfg)
 		{
@@ -80,20 +79,48 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 			if (!trace)
 				return;
 
-			Console.Write ("block " + block.Block.Ordinal + ": ");
+			TraceWrite ("block " + block.Block.Ordinal + ": ");
 			if (block.Block.Operations.FirstOrDefault () is IOperation firstBlockOp) {
-				Console.WriteLine (firstBlockOp.Syntax.ToString ());
+				TraceWriteLine (firstBlockOp.Syntax.ToString ());
 			} else if (block.Block.BranchValue is IOperation branchOp) {
-				Console.WriteLine (branchOp.Syntax.ToString ());
+				TraceWriteLine (branchOp.Syntax.ToString ());
 			} else {
-				Console.WriteLine ();
+				TraceWriteLine ("");
 			}
-			Console.Write ("predecessors: ");
+			TraceWrite ("predecessors: ");
 			foreach (var predecessor in cfg.GetPredecessors (block)) {
 				var predProxy = predecessor.Block;
-				Console.Write (predProxy.Block.Ordinal + " ");
+				TraceWrite (predProxy.Block.Ordinal + " ");
 			}
-			Console.WriteLine ();
+			TraceWriteLine ("");
+		}
+
+		private static void TraceWriteLine (string tracingInfo)
+		{
+			switch (tracingMechanism) {
+			case TracingType.Console:
+				Console.WriteLine (tracingInfo);
+				break;
+			case TracingType.Debug:
+				Debug.WriteLine (tracingInfo);
+				break;
+			default:
+				throw new NotImplementedException (message: "invalid TracingType is being used");
+			}
+		}
+
+		private static void TraceWrite (string tracingInfo)
+		{
+			switch (tracingMechanism) {
+			case TracingType.Console:
+				Console.Write (tracingInfo);
+				break;
+			case TracingType.Debug:
+				Debug.Write (tracingInfo);
+				break;
+			default:
+				throw new NotImplementedException (message: "invalid TracingType is being used");
+			}
 		}
 
 		static void WriteIndented (string? s, int level)
@@ -102,15 +129,15 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 			if (lines == null)
 				return;
 			foreach (var line in lines) {
-				Console.Write (new String ('\t', level));
-				Console.WriteLine (line);
+				TraceWrite (new String ('\t', level));
+				TraceWriteLine (line);
 			}
 		}
 
 		public override void TraceBlockInput (
-			LocalState<ValueSet<SingleValue>> normalState,
-			LocalState<ValueSet<SingleValue>>? exceptionState,
-			LocalState<ValueSet<SingleValue>>? exceptionFinallyState
+			LocalStateValue normalState,
+			LocalStateValue? exceptionState,
+			LocalStateValue? exceptionFinallyState
 		)
 		{
 			if (trace && showStates) {
@@ -125,9 +152,9 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 		}
 
 		public override void TraceBlockOutput (
-			LocalState<ValueSet<SingleValue>> normalState,
-			LocalState<ValueSet<SingleValue>>? exceptionState,
-			LocalState<ValueSet<SingleValue>>? exceptionFinallyState
+			LocalStateValue normalState,
+			LocalStateValue? exceptionState,
+			LocalStateValue? exceptionFinallyState
 		)
 		{
 			if (trace && showStates) {

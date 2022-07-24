@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -21,6 +21,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			TestPublicParameterlessConstructor ();
 			TestPublicConstructors ();
 			TestConstructors ();
+			TestNull ();
+			TestNoValue ();
 			TestUnknownType ();
 
 			TestTypeNameFromParameter (null);
@@ -30,6 +32,9 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			TestMultipleMixedValues ();
 
 			TestStringEmpty ();
+
+			TypeWithWarnings.Test ();
+			OverConstTypeName.Test ();
 
 			// TODO:
 			// Test multi-value returns
@@ -67,6 +72,20 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			type.RequiresPublicConstructors ();
 			type.RequiresNonPublicConstructors ();
 			type.RequiresNone ();
+		}
+
+		static void TestNull ()
+		{
+			// GetType(null) throws at runtime, so we "give up" on analysis
+			Type.GetType (null).RequiresAll ();
+		}
+
+		static void TestNoValue ()
+		{
+			Type t = null;
+			// null.AssemblyQualifiedName throws at runtime, so we "give up" on analysis
+			string noValue = t.AssemblyQualifiedName;
+			Type.GetType (noValue).RequiresAll ();
 		}
 
 		[ExpectedWarning ("IL2057", nameof (GetType))]
@@ -141,6 +160,38 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			}
 
 			Type.GetType (typeName).RequiresNonPublicConstructors ();
+		}
+
+		class TypeWithWarnings
+		{
+			[RequiresUnreferencedCode ("--Method1--")]
+			public void Method1 () { }
+
+			[RequiresUnreferencedCode ("--Method2--")]
+			public void Method2 () { }
+
+			// https://github.com/dotnet/linker/issues/2273
+			[ExpectedWarning ("IL2026", "--Method1--", ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2026", "--Method2--", ProducedBy = ProducedBy.Trimmer)]
+			public static void Test ()
+			{
+				Type.GetType ("Mono.Linker.Tests.Cases.DataFlow." + nameof (GetTypeDataFlow) + "+" + nameof (TypeWithWarnings)).RequiresPublicMethods ();
+			}
+		}
+
+		class OverConstTypeName
+		{
+			private const string s_ConstTypeName = "Mono.Linker.Tests.Cases.DataFlow." + nameof (GetTypeDataFlow) + "+" + nameof (OverConstTypeName);
+
+			[RequiresUnreferencedCode ("--Method1--")]
+			public void Method1 () { }
+
+			// https://github.com/dotnet/linker/issues/2273
+			[ExpectedWarning ("IL2026", "--Method1--", ProducedBy = ProducedBy.Trimmer)]
+			public static void Test ()
+			{
+				Type.GetType (s_ConstTypeName).RequiresPublicMethods ();
+			}
 		}
 
 		[return: DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]

@@ -1,8 +1,12 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+// This is needed due to NativeAOT which doesn't enable nullable globally yet
+#nullable enable
 
 namespace ILLink.Shared.TrimAnalysis
 {
+	[StaticCs.Closed]
 	enum IntrinsicId
 	{
 		None = 0,
@@ -14,6 +18,7 @@ namespace ILLink.Shared.TrimAnalysis
 		Array_Empty,
 		TypeInfo_AsType,
 		MethodBase_GetMethodFromHandle,
+		MethodBase_get_MethodHandle,
 
 		// Anything above this marker will require the method to be run through
 		// the reflection body scanner.
@@ -42,10 +47,15 @@ namespace ILLink.Shared.TrimAnalysis
 		Expression_Field,
 		Expression_Property,
 		Expression_New,
+		Enum_GetValues,
+		Marshal_SizeOf,
+		Marshal_OffsetOf,
+		Marshal_PtrToStructure,
+		Marshal_DestroyStructure,
+		Marshal_GetDelegateForFunctionPointer,
 		Activator_CreateInstance_Type,
 		Activator_CreateInstance_AssemblyName_TypeName,
 		Activator_CreateInstanceFrom,
-		Activator_CreateInstanceOfT,
 		AppDomain_CreateInstance,
 		AppDomain_CreateInstanceAndUnwrap,
 		AppDomain_CreateInstanceFrom,
@@ -57,5 +67,6 @@ namespace ILLink.Shared.TrimAnalysis
 		RuntimeReflectionExtensions_GetRuntimeProperty,
 		RuntimeHelpers_RunClassConstructor,
 		MethodInfo_MakeGenericMethod,
+		Nullable_GetUnderlyingType
 	}
 }

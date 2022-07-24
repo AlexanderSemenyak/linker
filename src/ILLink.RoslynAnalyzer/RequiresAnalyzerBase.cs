@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Immutable;
@@ -183,7 +183,7 @@ namespace ILLink.RoslynAnalyzer
 							if (instanceCtor.Arity > 0)
 								continue;
 
-							if (instanceCtor.TargetHasRequiresAttribute (RequiresAttributeName, out var requiresAttribute) &&
+							if (instanceCtor.DoesMemberRequire (RequiresAttributeName, out var requiresAttribute) &&
 								VerifyAttributeArguments (requiresAttribute)) {
 								syntaxNodeAnalysisContext.ReportDiagnostic (Diagnostic.Create (RequiresDiagnosticRule,
 									syntaxNodeAnalysisContext.Node.GetLocation (),
@@ -213,7 +213,7 @@ namespace ILLink.RoslynAnalyzer
 						return;
 
 					foreach (var attr in symbol.GetAttributes ()) {
-						if (attr.AttributeConstructor?.TargetHasRequiresAttribute (RequiresAttributeName, out var requiresAttribute) == true) {
+						if (attr.AttributeConstructor?.DoesMemberRequire (RequiresAttributeName, out var requiresAttribute) == true) {
 							symbolAnalysisContext.ReportDiagnostic (Diagnostic.Create (RequiresDiagnosticRule,
 								symbol.Locations[0], attr.AttributeConstructor.GetDisplayName (), GetMessageFromAttribute (requiresAttribute), GetUrlFromAttribute (requiresAttribute)));
 						}
@@ -242,7 +242,7 @@ namespace ILLink.RoslynAnalyzer
 					while (member is IMethodSymbol method && method.OverriddenMethod != null && SymbolEqualityComparer.Default.Equals (method.ReturnType, method.OverriddenMethod.ReturnType))
 						member = method.OverriddenMethod;
 
-					if (!member.TargetHasRequiresAttribute (RequiresAttributeName, out var requiresAttribute))
+					if (!member.DoesMemberRequire (RequiresAttributeName, out var requiresAttribute))
 						return;
 
 					if (!VerifyAttributeArguments (requiresAttribute))
@@ -263,15 +263,9 @@ namespace ILLink.RoslynAnalyzer
 					SymbolAnalysisContext symbolAnalysisContext,
 					INamedTypeSymbol type)
 				{
-					ImmutableArray<INamedTypeSymbol> interfaces = type.Interfaces;
-					foreach (INamespaceOrTypeSymbol iface in interfaces) {
-						var members = iface.GetMembers ();
-						foreach (var member in members) {
-							var implementation = type.FindImplementationForInterfaceMember (member);
-							// In case the implementation is null because the user code is missing an implementation, we dont provide diagnostics.
-							// The compiler will provide an error
-							if (implementation != null && HasMismatchingAttributes (member, implementation))
-								ReportMismatchInAttributesDiagnostic (symbolAnalysisContext, implementation, member, isInterface: true);
+					foreach (var memberpair in type.GetMemberInterfaceImplementationPairs ()) {
+						if (HasMismatchingAttributes (memberpair.InterfaceMember, memberpair.ImplementationMember)) {
+							ReportMismatchInAttributesDiagnostic (symbolAnalysisContext, memberpair.ImplementationMember, memberpair.InterfaceMember, isInterface: true);
 						}
 					}
 				}
@@ -359,9 +353,11 @@ namespace ILLink.RoslynAnalyzer
 
 		private bool HasMismatchingAttributes (ISymbol member1, ISymbol member2)
 		{
-			bool member1HasAttribute = member1.IsOverrideInRequiresScope (RequiresAttributeName);
-			bool member2HasAttribute = member2.IsOverrideInRequiresScope (RequiresAttributeName);
-			return member1HasAttribute ^ member2HasAttribute;
+			bool member1CreatesRequirement = member1.DoesMemberRequire (RequiresAttributeName, out _);
+			bool member2CreatesRequirement = member2.DoesMemberRequire (RequiresAttributeName, out _);
+			bool member1FulfillsRequirement = member1.IsOverrideInRequiresScope (RequiresAttributeName);
+			bool member2FulfillsRequirement = member2.IsOverrideInRequiresScope (RequiresAttributeName);
+			return (member1CreatesRequirement && !member2FulfillsRequirement) || (member2CreatesRequirement && !member1FulfillsRequirement);
 		}
 
 		protected abstract string GetMessageFromAttribute (AttributeData requiresAttribute);

@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -19,6 +19,10 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			// These behave as expected
 			TestBranchMergeGoto ();
 			TestBranchMergeIf ();
+			TestBranchMergeNullCoalesce ();
+			TestBranchMergeNullCoalescingAssignment ();
+			TestBranchMergeNullCoalescingAssignmentComplex ();
+			TestBranchMergeDiscardNullCoalesce ();
 			TestBranchMergeIfElse ();
 			TestBranchMergeSwitch ();
 			TestBranchMergeTry ();
@@ -81,6 +85,43 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 
 			str.RequiresPublicFields (); // warns for GetWithPublicMethods
 			str.RequiresPublicMethods (); // warns for GetWithPublicFields
+		}
+
+		[ExpectedWarning ("IL2072", nameof (GetWithPublicMethods), nameof (DataFlowStringExtensions.RequiresAll))]
+		[ExpectedWarning ("IL2072", nameof (GetWithPublicFields), nameof (DataFlowStringExtensions.RequiresAll))]
+		public static void TestBranchMergeNullCoalesce ()
+		{
+			string str = GetWithPublicMethods () ?? GetWithPublicFields ();
+
+			str.RequiresAll ();
+		}
+
+		[ExpectedWarning ("IL2072", nameof (GetWithPublicMethods), nameof (DataFlowStringExtensions.RequiresAll))]
+		[ExpectedWarning ("IL2072", nameof (GetWithPublicFields), nameof (DataFlowStringExtensions.RequiresAll))]
+		public static void TestBranchMergeNullCoalescingAssignment ()
+		{
+			string str = GetWithPublicMethods ();
+			str ??= GetWithPublicFields ();
+
+			str.RequiresAll ();
+		}
+
+		[ExpectedWarning ("IL2072", nameof (GetWithPublicMethods), nameof (DataFlowStringExtensions.RequiresAll))]
+		[ExpectedWarning ("IL2072", nameof (GetWithPublicFields), nameof (DataFlowStringExtensions.RequiresAll))]
+		[ExpectedWarning ("IL2072", nameof (GetWithPublicConstructors), nameof (DataFlowStringExtensions.RequiresAll))]
+		public static void TestBranchMergeNullCoalescingAssignmentComplex ()
+		{
+			string str = GetWithPublicMethods ();
+			str ??= GetWithPublicFields () ?? GetWithPublicConstructors ();
+
+			str.RequiresAll ();
+		}
+
+		[ExpectedWarning ("IL2072", nameof (GetWithPublicMethods), nameof (DataFlowStringExtensions.RequiresAll))]
+		[ExpectedWarning ("IL2072", nameof (GetWithPublicFields), nameof (DataFlowStringExtensions.RequiresAll))]
+		public static void TestBranchMergeDiscardNullCoalesce ()
+		{
+			(_ = GetWithPublicMethods () ?? GetWithPublicFields ()).RequiresAll ();
 		}
 
 		[ExpectedWarning ("IL2072",
@@ -399,6 +440,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 		// https://github.com/dotnet/linker/issues/2273
 		// Analyzer doesn't see through foreach over array at all -  will not warn
 		[ExpectedWarning ("IL2063", ProducedBy = ProducedBy.Trimmer)] // The types loaded from the array don't have annotations, so the "return" should warn
+		[ExpectedWarning ("IL2073", ProducedBy = ProducedBy.Analyzer)] // Analyzer tracks resultType as the value from IEnumerable.Current.get()
 		[return: DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicMethods)]
 		public static Type TestBackwardEdgeWithLdElem (Type[] types = null)
 		{
@@ -408,35 +450,6 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			}
 
 			return resultType;
-		}
-
-		public static void RequireAll (
-			[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)]
-			string type)
-		{
-		}
-
-		public static void RequirePublicFields (
-			[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields)]
-			string type)
-		{
-		}
-
-		public static void RequireNonPublicMethods (
-			[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.NonPublicMethods)]
-			string type)
-		{
-		}
-		public static void RequirePublicMethods (
-			[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicMethods)]
-			string type)
-		{
-		}
-
-		public static void RequirePublicConstructors (
-			[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-			string type)
-		{
 		}
 
 		[return: DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicFields)]

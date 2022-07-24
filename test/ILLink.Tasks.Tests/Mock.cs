@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections;
@@ -148,6 +148,12 @@ namespace ILLink.Tasks.Tests
 			Context.Tracer.AddRecorder (MockXmlDependencyRecorder.Singleton);
 		}
 
+		protected override void AddDgmlDependencyRecorder (LinkContext context, string file)
+		{
+			// Don't try to open the output file for writing - just pretend it exists.
+			Context.Tracer.AddRecorder (MockDgmlDependencyRecorder.Singleton);
+		}
+
 		public IEnumerable<IDependencyRecorder> GetDependencyRecorders ()
 		{
 			return (IEnumerable<IDependencyRecorder>) typeof (Tracer).GetField ("recorders", BindingFlags.NonPublic | BindingFlags.Instance).GetValue (Context.Tracer);
@@ -182,6 +188,15 @@ namespace ILLink.Tasks.Tests
 		public static MockXmlDependencyRecorder Singleton { get; } = new MockXmlDependencyRecorder ();
 		public void RecordDependency (object source, object arget, bool marked) { }
 		public void RecordDependency (object target, in DependencyInfo reason, bool marked) { }
+		public void FinishRecording () { }
+	}
+
+	public class MockDgmlDependencyRecorder : IDependencyRecorder
+	{
+		public static MockXmlDependencyRecorder Singleton { get; } = new MockXmlDependencyRecorder ();
+		public void RecordDependency (object source, object arget, bool marked) { }
+		public void RecordDependency (object target, in DependencyInfo reason, bool marked) { }
+		public void FinishRecording () { }
 	}
 
 	public class MockCustomStep : IStep

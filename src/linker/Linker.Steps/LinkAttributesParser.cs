@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Diagnostics;
@@ -9,6 +9,8 @@ using System.Linq;
 using System.Text;
 using System.Xml.XPath;
 using ILLink.Shared;
+using ILLink.Shared.TrimAnalysis;
+using ILLink.Shared.TypeSystemProxy;
 using Mono.Cecil;
 
 namespace Mono.Linker.Steps
@@ -103,15 +105,15 @@ namespace Mono.Linker.Steps
 				return knownTypeDef;
 			}
 
-			var voidType = BCL.FindPredefinedType ("System", "Void", _context);
+			var voidType = BCL.FindPredefinedType (WellKnownType.System_Void, _context);
 			if (voidType == null)
 				return null;
 
-			var attributeType = BCL.FindPredefinedType ("System", "Attribute", _context);
+			var attributeType = BCL.FindPredefinedType (WellKnownType.System_Attribute, _context);
 			if (attributeType == null)
 				return null;
 
-			var objectType = BCL.FindPredefinedType ("System", "Object", _context);
+			var objectType = BCL.FindPredefinedType (WellKnownType.System_Object, _context);
 			if (objectType == null)
 				return null;
 			var objectArrayType = new ArrayType (objectType);
@@ -287,10 +289,11 @@ namespace Mono.Linker.Steps
 				return new CustomAttributeArgument (enumType, ConvertStringValue (evalue, typeref));
 
 			case MetadataType.Class:
-				if (!typeref.IsTypeOf ("System", "Type"))
+				if (!typeref.IsTypeOf (WellKnownType.System_Type))
 					goto default;
 
-				if (!_context.TypeNameResolver.TryResolveTypeName (svalue, memberWithAttribute, out TypeReference? type, out _)) {
+				var diagnosticContext = new DiagnosticContext (new MessageOrigin (memberWithAttribute), diagnosticsEnabled: true, _context);
+				if (!_context.TypeNameResolver.TryResolveTypeName (svalue, diagnosticContext, out TypeReference? type, out _)) {
 					_context.LogError (GetMessageOriginForPosition (nav), DiagnosticId.CouldNotResolveCustomAttributeTypeValue, svalue);
 					return null;
 				}
@@ -338,7 +341,8 @@ namespace Mono.Linker.Steps
 				if (string.IsNullOrEmpty (typeName))
 					typeName = "System.String";
 
-				if (!_context.TypeNameResolver.TryResolveTypeName (typeName, memberWithAttribute, out TypeReference? typeref, out _)) {
+				var diagnosticContext = new DiagnosticContext (new MessageOrigin (memberWithAttribute), diagnosticsEnabled: true, _context);
+				if (!_context.TypeNameResolver.TryResolveTypeName (typeName, diagnosticContext, out TypeReference? typeref, out _)) {
 					_context.LogError (GetMessageOriginForPosition (nav), DiagnosticId.TypeUsedWithAttributeValueCouldNotBeFound, typeName, nav.Value);
 					return null;
 				}

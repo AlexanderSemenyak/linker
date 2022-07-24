@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -24,6 +24,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			PropagateToThis ();
 			PropagateToThisWithGetters ();
 			PropagateToThisWithSetters ();
+			AssignToThis ();
 
 			TestAnnotationOnNonTypeMethod ();
 			TestUnknownThis ();
@@ -83,6 +84,13 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			return null;
 		}
 
+		static void AssignToThis ()
+		{
+			var s = new StructType ();
+			s.AssignToThis ();
+			s.AssignToThisCaptured ();
+		}
+
 		static void TestAnnotationOnNonTypeMethod ()
 		{
 			var t = new NonTypeType ();
@@ -90,7 +98,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			NonTypeType.StaticMethod ();
 		}
 
-		[ExpectedWarning ("IL2065", nameof (MethodThisDataFlowTypeTest) + "." + nameof (MethodThisDataFlowTypeTest.RequireThisNonPublicMethods), "'this'", ProducedBy = ProducedBy.Trimmer)]
+		[ExpectedWarning ("IL2065", nameof (MethodThisDataFlowTypeTest) + "." + nameof (MethodThisDataFlowTypeTest.RequireThisNonPublicMethods), "'this'")]
 		static void TestUnknownThis ()
 		{
 			var array = new object[1];
@@ -146,6 +154,24 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicMethods)]
 			public static void StaticMethod ()
 			{
+			}
+		}
+
+		struct StructType
+		{
+			int f;
+			public StructType (int f) => this.f = f;
+
+			public void AssignToThis ()
+			{
+				// Not relevant for dataflow, but this should not crash the analyzer.
+				this = new StructType ();
+			}
+
+			public void AssignToThisCaptured ()
+			{
+				// Not relevant for dataflow, but this should not crash the analyzer.
+				this = string.Empty.Length == 0 ? new StructType (1) : new StructType (2);
 			}
 		}
 	}

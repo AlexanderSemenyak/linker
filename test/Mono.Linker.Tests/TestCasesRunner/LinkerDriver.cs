@@ -1,4 +1,7 @@
-﻿using System.Collections.Generic;
+﻿// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
+using System.Collections.Generic;
 
 namespace Mono.Linker.Tests.TestCasesRunner
 {
@@ -25,7 +28,7 @@ namespace Mono.Linker.Tests.TestCasesRunner
 		{
 			Driver.ProcessResponseFile (args, out var queue);
 			using (var driver = new TestDriver (queue, customizations)) {
-				driver.Run (logger, throwOnFatalLinkerException: true);
+				driver.Run (logger);
 			}
 		}
 	}

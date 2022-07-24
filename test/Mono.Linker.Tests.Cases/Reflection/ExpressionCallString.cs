@@ -10,6 +10,7 @@ namespace Mono.Linker.Tests.Cases.Reflection
 	[SetupCSharpCompilerToUse ("csc")]
 	[Reference ("System.Core.dll")]
 	[ExpectedNoWarnings]
+	[KeptPrivateImplementationDetails ("ThrowSwitchExpressionException")]
 	public class ExpressionCallString
 	{
 		public static void Main ()
@@ -26,6 +27,11 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			Expression.Call (typeof (UnknownNameMethodClass), GetUnknownString (), Type.EmptyTypes);
 
 			TestUnknownType.Test ();
+			TestNullType ();
+			TestNoValue ();
+			TestNullString ();
+			TestEmptyString ();
+			TestNoValueString ();
 
 			TestGenericMethods.Test ();
 		}
@@ -143,6 +149,41 @@ namespace Mono.Linker.Tests.Cases.Reflection
 		}
 
 		[Kept]
+		static void TestNullType ()
+		{
+			Type t = null;
+			Expression.Call (t, "This string will not be reached", Type.EmptyTypes);
+		}
+
+		[Kept]
+		static void TestNoValue ()
+		{
+			Type t = null;
+			Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+			Expression.Call (noValue, "This string will not be reached", Type.EmptyTypes);
+		}
+
+		[Kept]
+		static void TestNullString ()
+		{
+			Expression.Call (typeof (TestType), null, Type.EmptyTypes);
+		}
+
+		[Kept]
+		static void TestEmptyString ()
+		{
+			Expression.Call (typeof (TestType), string.Empty, Type.EmptyTypes);
+		}
+
+		[Kept]
+		static void TestNoValueString ()
+		{
+			Type t = null;
+			string noValue = t.AssemblyQualifiedName;
+			Expression.Call (typeof (TestType), noValue, Type.EmptyTypes);
+		}
+
+		[Kept]
 		class UnknownNameMethodClass
 		{
 			[Kept]
@@ -244,7 +285,8 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			}
 
 			[Kept]
-			[ExpectedWarning ("IL2060", "Expression.Call")]
+			// https://github.com/dotnet/linker/issues/2755
+			[ExpectedWarning ("IL2060", "Expression.Call", ProducedBy = ProducedBy.Trimmer)]
 			static void TestMethodWithRequirementsUnknownTypeArray (Type[] types)
 			{
 				// The passed in types array cannot be analyzed, so a warning is produced.
@@ -318,6 +360,32 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			}
 
 			[Kept]
+			[KeptMember (".cctor()")]
+			class TwoKnownTypeArrays
+			{
+				[Kept]
+				public static void GenericMethodWithRequirements<
+					[KeptAttributeAttribute (typeof (DynamicallyAccessedMembersAttribute))]
+				[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicProperties)] T> ()
+				{ }
+
+				[Kept]
+				static string _unknownMethodName = "NoMethod";
+
+				[Kept]
+				[ExpectedWarning ("IL2060", "Expression.Call")]
+				public static void Test (int p = 0)
+				{
+					Type[] types = p switch {
+						0 => new Type[] { typeof (TestType) },
+						1 => new Type[] { typeof (TestType) }
+					};
+
+					Expression.Call (typeof (TwoKnownTypeArrays), _unknownMethodName, types);
+				}
+			}
+
+			[Kept]
 			public static void Test ()
 			{
 				TestWithNoTypeParameters ();
@@ -329,6 +397,7 @@ namespace Mono.Linker.Tests.Cases.Reflection
 				UnknownMethodWithRequirements.TestWithoutTypeParameters ();
 				UnknownTypeWithRequirements.TestWithTypeParameters ();
 				UnknownTypeWithRequirements.TestWithoutTypeParameters ();
+				TwoKnownTypeArrays.Test ();
 			}
 
 			[Kept]

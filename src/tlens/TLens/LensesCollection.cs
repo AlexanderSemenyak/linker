@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -10,7 +10,7 @@ namespace TLens
 {
 	static class LensesCollection
 	{
-		public class LensAnalyzerDetails
+		public sealed class LensAnalyzerDetails
 		{
 			public LensAnalyzerDetails (string name, string description, Type analyzerType)
 			{
@@ -53,9 +53,9 @@ namespace TLens
 			new LensAnalyzerDetails ("large-arrays",
 				"Methods creating large arrays", typeof (LargeStaticArraysAnalyzer)) { DefaultSet = true },
 			new LensAnalyzerDetails ("large-cctors",
-				"Types with large static contructor", typeof (LargeStringsAnalyzer)),
+				"Types with large static contructor", typeof (LargeStaticCtorAnalyzer)),
 			new LensAnalyzerDetails ("large-strings",
-				"Methods using large strings literals", typeof (LargeStaticCtorAnalyzer)) { DefaultSet = true },
+				"Methods using large strings literals", typeof (LargeStringsAnalyzer)) { DefaultSet = true },
 			new LensAnalyzerDetails ("operator-null",
 				"User operators used for null check", typeof (UserOperatorCalledForNullCheckAnalyzer)),
 			new LensAnalyzerDetails ("single-calls",

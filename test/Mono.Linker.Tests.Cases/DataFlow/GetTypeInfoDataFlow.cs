@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -17,6 +17,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 		{
 			TestNoAnnotations (typeof (TestType));
 			TestWithAnnotations (typeof (TestType));
+			TestWithNull ();
+			TestWithNoValue ();
 		}
 
 		[ExpectedWarning ("IL2067", nameof (DataFlowTypeExtensions.RequiresPublicMethods))]
@@ -32,6 +34,19 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			t.GetTypeInfo ().RequiresPublicMethods ();
 			t.GetTypeInfo ().RequiresPublicFields ();
 			t.GetTypeInfo ().RequiresNone ();
+		}
+
+		static void TestWithNull ()
+		{
+			Type t = null;
+			t.GetTypeInfo ().RequiresPublicMethods ();
+		}
+
+		static void TestWithNoValue ()
+		{
+			Type t = null;
+			Type noValue = Type.GetTypeFromHandle (t.TypeHandle);
+			noValue.GetTypeInfo ().RequiresPublicMethods ();
 		}
 
 		class TestType { }

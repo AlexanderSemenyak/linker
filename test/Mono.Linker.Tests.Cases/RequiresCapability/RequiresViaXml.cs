@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -25,14 +25,16 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
 		// The second attribute is added through link attribute XML
 		[RequiresUnreferencedCode ("Message for --MethodWithDuplicateRequiresAttribute--")]
 		[ExpectedWarning ("IL2027", "RequiresUnreferencedCodeAttribute", nameof (MethodWithDuplicateRequiresAttribute), ProducedBy = ProducedBy.Trimmer)]
-		[ExpectedWarning ("IL2027", "RequiresUnreferencedCodeAttribute", nameof (MethodWithDuplicateRequiresAttribute), ProducedBy = ProducedBy.Trimmer)]
 		static void MethodWithDuplicateRequiresAttribute ()
 		{
 		}
 
 		[ExpectedWarning ("IL2026", "--MethodWithDuplicateRequiresAttribute--")]
+		[ExpectedWarning ("IL2026", "--MethodWithDuplicateRequiresAttribute--")]
 		static void TestDuplicateRequiresAttribute ()
 		{
+			MethodWithDuplicateRequiresAttribute ();
+			// A second callsite should not introduce extra warnings about the duplicate attributes.
 			MethodWithDuplicateRequiresAttribute ();
 		}
 

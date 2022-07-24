@@ -1,3 +1,6 @@
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 using System.Threading.Tasks;
 using Xunit;
 
@@ -26,6 +29,12 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task ArrayDataFlow ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
 		public Task AttributeConstructorDataflow ()
 		{
 			return RunTest (nameof (AttributeConstructorDataflow));
@@ -50,7 +59,25 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task CompilerGeneratedCodeDataflow ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
+		public Task CompilerGeneratedTypes ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
 		public Task ComplexTypeHandling ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
+		public Task CompilerGeneratedCodeAccessedViaReflection ()
 		{
 			return RunTest ();
 		}
@@ -69,6 +96,12 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task EventDataFlow ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
 		public Task FieldDataFlow ()
 		{
 			return RunTest (nameof (FieldDataFlow));
@@ -83,8 +116,13 @@ namespace ILLink.RoslynAnalyzer.Tests
 		[Fact]
 		public Task MakeGenericDataFlow ()
 		{
-			// https://github.com/dotnet/linker/issues/2273
-			return RunTest (allowMissingWarnings: true);
+			return RunTest ();
+		}
+
+		[Fact]
+		public Task MethodByRefReturnDataFlow ()
+		{
+			return RunTest ();
 		}
 
 		[Fact]
@@ -100,10 +138,10 @@ namespace ILLink.RoslynAnalyzer.Tests
 			return RunTest (allowMissingWarnings: true);
 		}
 
-		[Fact (Skip = "https://github.com/dotnet/linker/issues/2273")]
+		[Fact]
 		public Task GetTypeDataFlow ()
 		{
-			return RunTest (nameof (GetTypeDataFlow));
+			return RunTest ();
 		}
 
 		[Fact]
@@ -186,6 +224,12 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task NullableAnnotations ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
 		public Task PropertyDataFlow ()
 		{
 			return RunTest (nameof (PropertyDataFlow));
@@ -200,8 +244,7 @@ namespace ILLink.RoslynAnalyzer.Tests
 		[Fact]
 		public Task TypeBaseTypeDataFlow ()
 		{
-			// https://github.com/dotnet/linker/issues/2273
-			return RunTest (allowMissingWarnings: true);
+			return RunTest ();
 		}
 
 		[Fact]
@@ -211,7 +254,7 @@ namespace ILLink.RoslynAnalyzer.Tests
 			return RunTest (allowMissingWarnings: true);
 		}
 
-		[Fact (Skip = "https://github.com/dotnet/linker/issues/2273")]
+		[Fact]
 		public Task VirtualMethodHierarchyDataflowAnnotationValidation ()
 		{
 			return RunTest (nameof (VirtualMethodHierarchyDataflowAnnotationValidation));

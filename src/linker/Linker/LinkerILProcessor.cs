@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using Mono.Cecil;
@@ -8,7 +8,7 @@ using Mono.Cecil.Cil;
 namespace Mono.Linker
 {
 #pragma warning disable RS0030
-	class LinkerILProcessor
+	sealed class LinkerILProcessor
 	{
 		readonly ILProcessor _ilProcessor;
 
@@ -107,8 +107,19 @@ namespace Mono.Linker
 		{
 			foreach (var instr in Instructions) {
 				switch (instr.OpCode.FlowControl) {
-				case FlowControl.Branch:
 				case FlowControl.Cond_Branch:
+					if (instr.Operand is Instruction?[] instructions) {
+						for (int i = 0; i < instructions.Length; ++i) {
+							if (instructions[i] == oldTarget)
+								instructions[i] = newTarget;
+						}
+
+						break;
+					}
+
+					goto case FlowControl.Branch;
+
+				case FlowControl.Branch:
 					if (instr.Operand == oldTarget)
 						instr.Operand = newTarget;
 					break;

@@ -15,6 +15,7 @@ namespace Mono.Linker.Tests.Cases.FeatureSettings
 	[SetupLinkerArgument ("--feature", "MethodCondition", "false")]
 	[SetupLinkerArgument ("--feature", "FieldCondition", "true")]
 	[SetupLinkerArgument ("--feature", "ResourceCondition", "true")]
+	[SetupLinkerArgument ("--enable-opt", "ipconstprop")]
 	[RemovedResourceInAssembly ("test.exe", "ResourceFileRemoveWhenTrue.txt")]
 	[KeptResource ("ResourceFileRemoveWhenFalse.txt")]
 	public class FeatureSubstitutionsNested

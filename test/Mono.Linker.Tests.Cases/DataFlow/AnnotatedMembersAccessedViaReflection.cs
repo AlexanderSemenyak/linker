@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -20,6 +20,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 {
 	[SkipKeptItemsValidation]
 	[ExpectedNoWarnings]
+	[UnconditionalSuppressMessage ("AOT", "IL3050", Justification = "These tests are not targetted at AOT scenarios")]
 	class AnnotatedMembersAccessedViaReflection
 	{
 		public static void Main ()
@@ -39,8 +40,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicMethods)]
 			public static Type _annotatedField;
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
-			[ExpectedWarning ("IL2110", nameof (_annotatedField), ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2110", nameof (_annotatedField))]
 			static void Reflection ()
 			{
 				typeof (AnnotatedField).GetField ("_annotatedField").SetValue (null, typeof (TestType));
@@ -52,8 +52,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				typeof (AnnotatedField).GetField ("_annotatedField").SetValue (null, typeof (TestType));
 			}
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
-			[ExpectedWarning ("IL2110", nameof (_annotatedField), ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2110", nameof (_annotatedField))]
 			static void ReflectionReadOnly ()
 			{
 				typeof (AnnotatedField).GetField ("_annotatedField").GetValue (null);
@@ -160,8 +159,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				{ }
 			}
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
-			[ExpectedWarning ("IL2111", nameof (MethodWithSingleAnnotatedParameter), ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2111", nameof (MethodWithSingleAnnotatedParameter))]
 			static void Reflection ()
 			{
 				typeof (AnnotatedMethodParameters).GetMethod (nameof (MethodWithSingleAnnotatedParameter)).Invoke (null, null);
@@ -294,8 +292,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				typeof (AnnotatedMethodReturnValue).GetMethod (nameof (InstanceMethodWithAnnotatedReturnValue)).Invoke (null, null);
 			}
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
-			[ExpectedWarning ("IL2111", nameof (VirtualMethodWithAnnotatedReturnValue), ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2111", nameof (VirtualMethodWithAnnotatedReturnValue))]
 			static void ReflectionOnVirtual ()
 			{
 				typeof (AnnotatedMethodReturnValue).GetMethod (nameof (VirtualMethodWithAnnotatedReturnValue)).Invoke (null, null);
@@ -423,8 +420,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				public Type PropertyWithAnnotation { get; set; }
 			}
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
-			[ExpectedWarning ("IL2111", nameof (Property1WithAnnotation) + ".set", ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2111", nameof (Property1WithAnnotation) + ".set")]
 			static void ReflectionOnPropertyItself ()
 			{
 				typeof (AnnotatedProperty).GetProperty (nameof (Property1WithAnnotation));
@@ -441,8 +437,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				typeof (AnnotatedProperty).GetProperty (nameof (Property2WithAnnotationGetterOnly));
 			}
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
-			[ExpectedWarning ("IL2111", nameof (VirtualProperty3WithAnnotationGetterOnly), ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2111", nameof (VirtualProperty3WithAnnotationGetterOnly))]
 			static void ReflectionOnPropertyWithGetterOnlyOnVirtual ()
 			{
 				typeof (AnnotatedProperty).GetProperty (nameof (VirtualProperty3WithAnnotationGetterOnly));
@@ -453,15 +448,13 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				typeof (AnnotatedProperty).GetMethod ("get_" + nameof (Property1WithAnnotation));
 			}
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
-			[ExpectedWarning ("IL2111", nameof (Property1WithAnnotation) + ".set", ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2111", nameof (Property1WithAnnotation) + ".set")]
 			static void ReflectionOnSetter ()
 			{
 				typeof (AnnotatedProperty).GetMethod ("set_" + nameof (Property1WithAnnotation));
 			}
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
-			[ExpectedWarning ("IL2111", nameof (VirtualProperty3WithAnnotationGetterOnly) + ".get", ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2111", nameof (VirtualProperty3WithAnnotationGetterOnly) + ".get")]
 			static void ReflectionOnVirtualGetter ()
 			{
 				typeof (AnnotatedProperty).GetMethod ("get_" + nameof (VirtualProperty3WithAnnotationGetterOnly));
@@ -616,9 +609,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				typeof (AnnotatedGenerics).RequiresPublicMethods ();
 			}
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
 			// This should produce IL2071 https://github.com/dotnet/linker/issues/2144
-			[ExpectedWarning ("IL2070", "MakeGenericMethod", ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2070", "MakeGenericMethod")]
 			static void InstantiateGeneric (Type type = null)
 			{
 				// This should warn due to MakeGenericMethod - in this case the generic parameter is unannotated type
@@ -662,8 +654,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				var _ = new Action<Type> (GenericWithAnnotatedMethod<TestType>.AnnotatedMethod);
 			}
 
-			// Intrinsic is disabled https://github.com/dotnet/linker/issues/2559
-			[ExpectedWarning ("IL2111", nameof (GenericMethodWithAnnotation), ProducedBy = ProducedBy.Trimmer)]
+			[ExpectedWarning ("IL2111", nameof (GenericMethodWithAnnotation))]
 			public static void GenericMethodWithAnnotationReflection ()
 			{
 				typeof (AnnotationOnGenerics).GetMethod (nameof (GenericMethodWithAnnotation));

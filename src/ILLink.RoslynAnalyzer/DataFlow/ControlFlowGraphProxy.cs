@@ -1,3 +1,6 @@
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -46,7 +49,7 @@ namespace ILLink.RoslynAnalyzer.DataFlow
 			}
 		}
 
-		public BlockProxy Entry => new BlockProxy (ControlFlowGraph.Blocks[0]);
+		public BlockProxy Entry => new BlockProxy (ControlFlowGraph.EntryBlock ());
 
 		// This is implemented by getting predecessors of the underlying Roslyn BasicBlock.
 		// This is fine as long as the blocks come from the correct control-flow graph.
@@ -80,7 +83,9 @@ namespace ILLink.RoslynAnalyzer.DataFlow
 		static bool TryGetTryOrCatchOrFilter (ControlFlowRegion? region, out RegionProxy tryOrCatchOrFilterRegion)
 		{
 			tryOrCatchOrFilterRegion = default;
-			while (region != null) {
+			// The check for ControlFlowRegionKind.Root prevents us from walking out to regions that
+			// contain code outside of the current control flow graph.
+			while (region != null && region.Kind != ControlFlowRegionKind.Root) {
 				if (region.Kind is ControlFlowRegionKind.Try or ControlFlowRegionKind.Catch or ControlFlowRegionKind.Filter) {
 					tryOrCatchOrFilterRegion = new RegionProxy (region);
 					return true;
@@ -94,7 +99,9 @@ namespace ILLink.RoslynAnalyzer.DataFlow
 		{
 			catchRegion = default;
 			ControlFlowRegion? region = block.Block.EnclosingRegion;
-			while (region != null) {
+			// The check for ControlFlowRegionKind.Root prevents us from walking out to regions that
+			// contain code outside of the current control flow graph.
+			while (region != null && region.Kind != ControlFlowRegionKind.Root) {
 				if (region.Kind == ControlFlowRegionKind.Finally) {
 					catchRegion = new RegionProxy (region);
 					return true;

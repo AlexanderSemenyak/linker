@@ -1,5 +1,5 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -139,7 +139,11 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			RequirePublicMethods (Type.GetType ("Mono.Linker.Tests.Cases.DataFlow.ComplexTypeHandling+ArrayTypeGetTypeElement[]"));
 		}
 
-		// Nothing should be marked as CreateInstance doesn't work on arrays
+		// Technically there's no reason to mark this type since it's only used as an array element type and CreateInstance
+		// doesn't work on arrays, but the currently implementation will preserve it anyway due to how it processes
+		// string -> Type resolution. This will only impact code which would have failed at runtime, so very unlikely to
+		// actually occur in real apps (and even if it does happen, it just increases size, doesn't break behavior).
+		[Kept]
 		class ArrayCreateInstanceByNameElement
 		{
 			public ArrayCreateInstanceByNameElement ()

@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -8,7 +8,7 @@ using TLens.Analyzers;
 
 namespace TLens
 {
-	class Runner
+	sealed class Runner
 	{
 		readonly List<Analyzer> analyzers = new List<Analyzer> ();
 
@@ -32,11 +32,7 @@ namespace TLens
 			bool first = true;
 			foreach (var a in analyzers) {
 				foreach (var assembly in assemblies) {
-					try {
-						a.ProcessAssembly (assembly);
-					} catch (Exception e) {
-						throw new ApplicationException ($"Internal error when analyzing '{assembly.FullName}' assembly with '{a.GetType ()}'", e);
-					}
+					a.ProcessAssembly (assembly);
 				}
 
 				if (!first)

@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -9,7 +9,7 @@ using Mono.Cecil.Cil;
 
 namespace TLens.Analyzers
 {
-	class RedundantFieldInitializationAnalyzer : Analyzer
+	sealed class RedundantFieldInitializationAnalyzer : Analyzer
 	{
 		readonly Dictionary<MethodDefinition, List<FieldDefinition>> ctors = new Dictionary<MethodDefinition, List<FieldDefinition>> ();
 
@@ -73,8 +73,8 @@ namespace TLens.Analyzers
 
 					case MetadataType.UIntPtr:
 					case MetadataType.IntPtr:
-						if (instr.Previous.OpCode.Code == Code.Ldsfld)
-							throw new NotImplementedException ("test with Zero property");
+						if (!IsLoadIntPtrOrUIntPtrZero (instr.Previous))
+							continue;
 
 						break;
 
@@ -96,6 +96,20 @@ namespace TLens.Analyzers
 		static bool IsDefaultNumeric (Instruction instruction)
 		{
 			return instruction.OpCode.Code == Code.Ldc_I4_0;
+		}
+
+		static bool IsLoadIntPtrOrUIntPtrZero (Instruction instruction)
+		{
+			if (instruction.OpCode.Code != Code.Ldsfld)
+				return false;
+
+			if (instruction.Operand is not FieldReference fr || fr == null)
+				return false;
+
+			if (fr.DeclaringType.FullName != "System.IntPtr" && fr.DeclaringType.FullName != "System.UIntPtr")
+				return false;
+
+			return fr.Name == "Zero";
 		}
 
 		public override void PrintResults (int maxCount)

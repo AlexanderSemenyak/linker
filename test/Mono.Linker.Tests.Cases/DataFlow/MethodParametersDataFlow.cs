@@ -1,5 +1,5 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
 using System.Collections.Generic;
@@ -42,6 +42,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			ParametersPassedToInstanceCtor (typeof (TestType), typeof (TestType));
 
 			TestParameterOverwrite (typeof (TestType));
+
+			WriteCapturedParameter.Test ();
 		}
 
 		// Validate the error message when annotated parameter is passed to another annotated parameter
@@ -165,7 +167,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 		// Validate error message when untracable value is passed to an annotated parameter.
 		[ExpectedWarning ("IL2062",
 			nameof (DataFlowTypeExtensions) + "." + nameof (DataFlowTypeExtensions.RequiresPublicParameterlessConstructor) + "(Type)",
-			"'type'", ProducedBy = ProducedBy.Trimmer)]
+			"'type'")]
 		private void UnknownValue ()
 		{
 			var array = new object[1];
@@ -235,11 +237,52 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			type.GetFields ();
 		}
 
+		class WriteCapturedParameter
+		{
+			[ExpectedWarning ("IL2072", nameof (GetUnknownType), "parameter")]
+			[ExpectedWarning ("IL2072", nameof (GetTypeWithPublicConstructors), "parameter")]
+			static void TestNullCoalesce ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.All)] Type parameter = null)
+			{
+				parameter = GetUnknownType () ?? GetTypeWithPublicConstructors ();
+			}
+
+			[ExpectedWarning ("IL2072", nameof (GetUnknownType), "parameter")]
+			static void TestNullCoalescingAssignment ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.All)] Type parameter = null)
+			{
+				parameter ??= GetUnknownType ();
+			}
+
+			[ExpectedWarning ("IL2072", nameof (GetUnknownType), "parameter")]
+			[ExpectedWarning ("IL2072", nameof (GetTypeWithPublicConstructors), "parameter")]
+			static void TestNullCoalescingAssignmentComplex ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.All)] Type parameter = null)
+			{
+				parameter ??= (GetUnknownType () ?? GetTypeWithPublicConstructors ());
+			}
+
+			public static void Test ()
+			{
+				TestNullCoalesce ();
+				TestNullCoalescingAssignment ();
+				TestNullCoalescingAssignmentComplex ();
+			}
+		}
+
 		class TestType
 		{
 			public TestType () { }
 			public TestType (int arg) { }
 			private TestType (int arg1, int arg2) { }
+		}
+
+		[return: DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicConstructors)]
+		private static Type GetTypeWithPublicConstructors ()
+		{
+			return null;
+		}
+
+		private static Type GetUnknownType ()
+		{
+			return null;
 		}
 	}
 }

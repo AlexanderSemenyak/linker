@@ -1,3 +1,6 @@
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 //
 // SweepStep.cs
 //
@@ -552,7 +555,7 @@ namespace Mono.Linker.Steps
 		{
 		}
 
-		class AssemblyReferencesCorrector : TypeReferenceWalker
+		sealed class AssemblyReferencesCorrector : TypeReferenceWalker
 		{
 			readonly DefaultMetadataImporter importer;
 

@@ -1,3 +1,6 @@
+// Copyright (c) .NET Foundation and contributors. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 //
 // Driver.cs
 //
@@ -90,7 +93,7 @@ namespace Mono.Linker
 						string responseFileName = arg.Substring (1);
 						using (var responseFileText = new StreamReader (responseFileName))
 							ParseResponseFile (responseFileText, result);
-					} catch (Exception e) {
+					} catch (Exception e) when (e is IOException or ObjectDisposedException) {
 						Console.Error.WriteLine ("Cannot read response file due to '{0}'", e.Message);
 						return false;
 					}
@@ -159,6 +162,8 @@ namespace Mono.Linker
 			Context.LogError (null, DiagnosticId.MissingArgumentForCommanLineOptionName, optionName);
 		}
 
+		public enum DependenciesFileFormat { Xml, Dgml };
+
 		// Perform setup of the LinkContext and parse the arguments.
 		// Return values:
 		// 0 => successfully set up context with all arguments
@@ -180,6 +185,7 @@ namespace Mono.Linker
 			bool deterministic_used = false;
 			bool keepCompilersResources = false;
 			MetadataTrimming metadataTrimming = MetadataTrimming.Any;
+			DependenciesFileFormat fileType = DependenciesFileFormat.Xml;
 
 			List<BaseStep> inputs = CreateDefaultResolvers ();
 
@@ -217,6 +223,16 @@ namespace Mono.Linker
 
 					case "--dump-dependencies":
 						dumpDependencies = true;
+						continue;
+
+					case "--dependencies-file-format":
+						if (!GetStringParam (token, out var dependenciesFileFormat))
+							return -1;
+
+						if (!Enum.TryParse (dependenciesFileFormat, ignoreCase: true, out fileType)) {
+							context.LogError (null, DiagnosticId.InvalidDependenciesFileFormat);
+							return -1;
+						}
 						continue;
 
 					case "--reduced-tracing":
@@ -686,8 +702,20 @@ namespace Mono.Linker
 			if (!new_mvid_used && !deterministic_used) {
 				context.DeterministicOutput = true;
 			}
-			if (dumpDependencies)
-				AddXmlDependencyRecorder (context, dependenciesFileName);
+			if (dumpDependencies) {
+				switch (fileType) {
+				case DependenciesFileFormat.Xml:
+					AddXmlDependencyRecorder (context, dependenciesFileName);
+					break;
+				case DependenciesFileFormat.Dgml:
+					AddDgmlDependencyRecorder (context, dependenciesFileName);
+					break;
+				default:
+					context.LogError (null, DiagnosticId.InvalidDependenciesFileFormat);
+					break;
+				}
+			}
+
 
 			if (set_optimizations.Count > 0) {
 				foreach (var (opt, assemblyName, enable) in set_optimizations) {
@@ -764,7 +792,7 @@ namespace Mono.Linker
 		// to the error code.
 		// May propagate exceptions, which will result in the process getting an
 		// exit code determined by dotnet.
-		public int Run (ILogger? customLogger = null, bool throwOnFatalLinkerException = false)
+		public int Run (ILogger? customLogger = null)
 		{
 			int setupStatus = SetupContext (customLogger);
 			if (setupStatus > 0)
@@ -777,29 +805,37 @@ namespace Mono.Linker
 
 			try {
 				p.Process (Context);
-			} catch (LinkerFatalErrorException lex) {
+			} catch (Exception e) when (LogFatalError (e)) {
+				// Unreachable
+				throw;
+			}
+
+			Context.FlushCachedWarnings ();
+			Context.Tracer.Finish ();
+			return Context.ErrorsCount > 0 ? 1 : 0;
+		}
+
+		/// <summary>
+		/// This method is called in the exception filter for unexpected exceptions.
+		/// Prints error messages and returns false to avoid catching in the exception filter.
+		/// </summary>
+		bool LogFatalError (Exception e)
+		{
+			switch (e) {
+			case LinkerFatalErrorException lex:
 				Context.LogMessage (lex.MessageContainer);
-				Console.Error.WriteLine (lex.ToString ());
 				Debug.Assert (lex.MessageContainer.Category == MessageCategory.Error);
 				Debug.Assert (lex.MessageContainer.Code != null);
 				Debug.Assert (lex.MessageContainer.Code.Value != 0);
-				if (throwOnFatalLinkerException)
-					throw;
-				return lex.MessageContainer.Code ?? 1;
-			} catch (ResolutionException e) {
-				Context.LogError (null, DiagnosticId.FailedToResolveMetadataElement, e.Message);
-			} catch (Exception) {
-				// Unhandled exceptions are usually linker bugs. Ask the user to report it.
+				break;
+			case ResolutionException re:
+				Context.LogError (null, DiagnosticId.FailedToResolveMetadataElement, re.Message);
+				break;
+			default:
 				Context.LogError (null, DiagnosticId.LinkerUnexpectedError);
-				// Don't swallow the exception and exit code - rethrow it and let the surrounding tooling decide what to do.
-				// The stack trace will go to stderr, and the MSBuild task will surface it with High importance.
-				throw;
-			} finally {
-				Context.FlushCachedWarnings ();
-				Context.Tracer.Finish ();
+				break;
 			}
-
-			return Context.ErrorsCount > 0 ? 1 : 0;
+			return false;
 		}
 
 		partial void PreProcessPipeline (Pipeline pipeline);
@@ -863,6 +899,11 @@ namespace Mono.Linker
 		protected virtual void AddXmlDependencyRecorder (LinkContext context, string? fileName)
 		{
 			context.Tracer.AddRecorder (new XmlDependencyRecorder (context, fileName));
+		}
+
+		protected virtual void AddDgmlDependencyRecorder (LinkContext context, string? fileName)
+		{
+			context.Tracer.AddRecorder (new DgmlDependencyRecorder (context, fileName));
 		}
 
 		protected bool AddMarkHandler (Pipeline pipeline, string arg)
@@ -1334,9 +1375,13 @@ namespace Mono.Linker
 
 			Console.WriteLine ();
 			Console.WriteLine ("Analyzer");
-			Console.WriteLine ("  --dependencies-file FILE   Specify the dependencies output. Defaults to 'output/linker-dependencies.xml.gz'");
-			Console.WriteLine ("  --dump-dependencies        Dump dependencies for the linker analyzer tool");
-			Console.WriteLine ("  --reduced-tracing          Reduces dependency output related to assemblies that will not be modified");
+			Console.WriteLine ("  --dependencies-file FILE              Specify the dependencies output. Defaults to 'output/linker-dependencies.xml'");
+			Console.WriteLine ("                                        if 'xml' is file format, 'output/linker-dependencies.dgml if 'dgml' is file format");
+			Console.WriteLine ("  --dump-dependencies                   Dump dependencies for the linker analyzer tool");
+			Console.WriteLine ("  --dependencies-file-format FORMAT     Specify output file type. Defaults to 'xml'");
+			Console.WriteLine ("                                          xml: outputs an .xml file");
+			Console.WriteLine ("                                          dgml: outputs a .dgml file");
+			Console.WriteLine ("  --reduced-tracing                     Reduces dependency output related to assemblies that will not be modified");
 			Console.WriteLine ("");
 		}
 
