@@ -36,6 +36,7 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
 			ReflectionAccessOnEvents.Test ();
 			ReflectionAccessOnProperties.Test ();
 			KeepFieldOnAttribute ();
+			AttributeParametersAndProperties.Test ();
 		}
 
 		[RequiresUnreferencedCode ("Message for --ClassWithRequires--")]
@@ -83,6 +84,10 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
 				void LocalFunction (int a) { }
 				LocalFunction (2);
 			}
+
+			// The attribute would generate warning, but it is suppressed due to the Requires on the type
+			[AttributeWithRequires ()]
+			public static void AttributedMethod () { }
 		}
 
 		class RequiresOnMethod
@@ -315,6 +320,21 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
 			public override void Method () { }
 		}
 
+		class BaseWithNoRequires
+		{
+			public virtual void Method () { }
+		}
+
+		[RequiresUnreferencedCode ("RUC")]
+		[RequiresDynamicCode ("RDC")]
+		class DerivedWithRequiresOnTypeOverBaseWithNoRequires : BaseWithNoRequires
+		{
+			// Should not warn since the members are not static
+			public override void Method ()
+			{
+			}
+		}
+
 		public interface InterfaceWithoutRequires
 		{
 			[RequiresUnreferencedCode ("RUC")]
@@ -502,6 +522,9 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
 
 				// Doesn't warn since DerivedWithoutRequiresOnType has no static methods
 				typeof (DerivedWithoutRequiresOnType).RequiresPublicMethods ();
+
+				// Doesn't warn since the type has no statics
+				typeof (DerivedWithRequiresOnTypeOverBaseWithNoRequires).RequiresPublicMethods ();
 			}
 
 			[ExpectedWarning ("IL2026", "BaseWithoutRequiresOnType.Method()")]
@@ -696,12 +719,30 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
 				instance.GetType ().GetField ("publicField");
 			}
 
+			[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.All)]
+			class DAMAnnotatedClassAccessedFromRUCScope
+			{
+				[ExpectedWarning ("IL2112", "DAMAnnotatedClassAccessedFromRUCScope.RUCMethod", ProducedBy = ProducedBy.Trimmer)]
+				[RequiresUnreferencedCode ("--RUCMethod--")]
+				public static void RUCMethod () { }
+			}
+
+			// RUC on the callsite to GetType should not suppress warnings about the
+			// attribute on the type.
+			[RequiresUnreferencedCode ("--TestDAMOnTypeAccessInRUCScope--")]
+			static void TestDAMOnTypeAccessInRUCScope (DAMAnnotatedClassAccessedFromRUCScope instance = null)
+			{
+				instance.GetType ().GetMethod ("RUCMethod");
+			}
+
+			[ExpectedWarning ("IL2026", "--TestDAMOnTypeAccessInRUCScope--")]
 			public static void Test ()
 			{
 				TestDAMAccess ();
 				TestDirectReflectionAccess ();
 				TestDynamicDependencyAccess ();
 				TestDAMOnTypeAccess (null);
+				TestDAMOnTypeAccessInRUCScope ();
 			}
 		}
 
@@ -883,5 +924,51 @@ namespace Mono.Linker.Tests.Cases.RequiresCapability
 		[ExpectedWarning ("IL2026", "AttributeWithRequires.AttributeWithRequires()")]
 		[ExpectedWarning ("IL3050", "AttributeWithRequires.AttributeWithRequires()", ProducedBy = ProducedBy.Analyzer)]
 		static void KeepFieldOnAttribute () { }
+
+		public class AttributeParametersAndProperties
+		{
+			[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicProperties)]
+			public static Type AnnotatedField;
+
+			[AttributeUsage (AttributeTargets.Method, AllowMultiple = true)]
+			public class AttributeWithRequirementsOnParameters : Attribute
+			{
+				public AttributeWithRequirementsOnParameters ()
+				{
+				}
+
+				public AttributeWithRequirementsOnParameters ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicFields)] Type type)
+				{
+				}
+
+				public int PropertyWithRequires {
+					get => 0;
+
+					[RequiresUnreferencedCode ("--PropertyWithRequires--")]
+					[RequiresDynamicCode ("--PropertyWithRequires--")]
+					set { }
+				}
+
+				[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicFields)]
+				public Type AnnotatedField;
+			}
+
+			[RequiresUnreferencedCode ("--AttributeParametersAndProperties--")]
+			[RequiresDynamicCode ("--AttributeParametersAndProperties--")]
+			class TestClass
+			{
+				[AttributeWithRequirementsOnParameters (typeof (AttributeParametersAndProperties))]
+				[AttributeWithRequirementsOnParameters (PropertyWithRequires = 1)]
+				[AttributeWithRequirementsOnParameters (AnnotatedField = typeof (AttributeParametersAndProperties))]
+				public static void Test () { }
+			}
+
+			[ExpectedWarning ("IL2026")]
+			[ExpectedWarning ("IL3050", ProducedBy = ProducedBy.Analyzer)]
+			public static void Test ()
+			{
+				TestClass.Test ();
+			}
+		}
 	}
 }

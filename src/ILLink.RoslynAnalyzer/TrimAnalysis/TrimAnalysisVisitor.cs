@@ -1,6 +1,7 @@
 // Copyright (c) .NET Foundation and contributors. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System;
 using System.Collections.Immutable;
 using System.Linq;
 using ILLink.RoslynAnalyzer.DataFlow;
@@ -8,7 +9,7 @@ using ILLink.Shared.DataFlow;
 using ILLink.Shared.TrimAnalysis;
 using ILLink.Shared.TypeSystemProxy;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.FlowAnalysis;
 using Microsoft.CodeAnalysis.Operations;
 
 using MultiValue = ILLink.Shared.DataFlow.ValueSet<ILLink.Shared.DataFlow.SingleValue>;
@@ -28,15 +29,19 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 		// Limit tracking array values to 32 values for performance reasons.
 		// There are many arrays much longer than 32 elements in .NET,
 		// but the interesting ones for the linker are nearly always less than 32 elements.
-		private const int MaxTrackedArrayValues = 32;
+		const int MaxTrackedArrayValues = 32;
 
 		public TrimAnalysisVisitor (
 			LocalStateLattice<MultiValue, ValueSetLattice<SingleValue>> lattice,
-			OperationBlockAnalysisContext context
-		) : base (lattice, context)
+			IMethodSymbol method,
+			ControlFlowGraph methodCFG,
+			ImmutableDictionary<CaptureId, FlowCaptureKind> lValueFlowCaptures,
+			TrimAnalysisPatternStore trimAnalysisPatterns,
+			InterproceduralState<MultiValue, ValueSetLattice<SingleValue>> interproceduralState
+		) : base (lattice, method, methodCFG, lValueFlowCaptures, interproceduralState)
 		{
 			_multiValueLattice = lattice.Lattice.ValueLattice;
-			TrimAnalysisPatterns = new TrimAnalysisPatternStore (_multiValueLattice);
+			TrimAnalysisPatterns = trimAnalysisPatterns;
 		}
 
 		// Override visitor methods to create tracked values when visiting operations
@@ -52,17 +57,8 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 			// If the return value is empty (TopValue basically) and the Operation tree
 			// reports it as having a constant value, use that as it will automatically cover
 			// cases we don't need/want to handle.
-			if (operation != null && returnValue.IsEmpty () && operation.ConstantValue.HasValue) {
-				object? constantValue = operation.ConstantValue.Value;
-				if (constantValue == null)
-					return NullValue.Instance;
-				else if (operation.Type?.SpecialType == SpecialType.System_String && constantValue is string stringConstantValue)
-					return new KnownStringValue (stringConstantValue);
-				else if (operation.Type?.TypeKind == TypeKind.Enum && constantValue is int enumConstantValue)
-					return new ConstIntValue (enumConstantValue);
-				else if (operation.Type?.SpecialType == SpecialType.System_Int32 && constantValue is int intConstantValue)
-					return new ConstIntValue (intConstantValue);
-			}
+			if (operation != null && returnValue.IsEmpty () && TryGetConstantValue (operation, out var constValue))
+				return constValue;
 
 			return returnValue;
 		}
@@ -105,7 +101,8 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 
 		public override MultiValue VisitParameterReference (IParameterReferenceOperation paramRef, StateValue state)
 		{
-			return paramRef.Parameter.Type.IsTypeInterestingForDataflow () ? new MethodParameterValue (paramRef.Parameter) : TopValue;
+			// Reading from a parameter always returns the same annotated value. We don't track modifications.
+			return GetParameterTargetValue (paramRef.Parameter);
 		}
 
 		public override MultiValue VisitInstanceReference (IInstanceReferenceOperation instanceRef, StateValue state)
@@ -115,9 +112,8 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 
 			// The instance reference operation represents a 'this' or 'base' reference to the containing type,
 			// so we get the annotation from the containing method.
-			// TODO: Check whether the Context.OwningSymbol is the containing type in case we are in a lambda.
 			if (instanceRef.Type != null && instanceRef.Type.IsTypeInterestingForDataflow ())
-				return new MethodThisParameterValue ((IMethodSymbol) Context.OwningSymbol);
+				return new MethodThisParameterValue (Method);
 
 			return TopValue;
 		}
@@ -126,7 +122,11 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 		{
 			var field = fieldRef.Field;
 			switch (field.Name) {
-			case "EmptyTypes" when field.ContainingType.IsTypeOf ("System", "Type"): {
+			case "EmptyTypes" when field.ContainingType.IsTypeOf ("System", "Type"):
+#if DEBUG
+			case "ArrayField" when field.ContainingType.IsTypeOf ("Mono.Linker.Tests.Cases.DataFlow", "WriteArrayField"):
+#endif
+				{
 					return ArrayValue.Create (0);
 				}
 			case "Empty" when field.ContainingType.IsTypeOf ("System", "String"): {
@@ -134,10 +134,10 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 				}
 			}
 
-			if (fieldRef.Field.Type.IsTypeInterestingForDataflow ())
-				return new FieldValue (fieldRef.Field);
+			if (TryGetConstantValue (fieldRef, out var constValue))
+				return constValue;
 
-			return TopValue;
+			return GetFieldTargetValue (fieldRef.Field);
 		}
 
 		public override MultiValue VisitTypeOf (ITypeOfOperation typeOfOperation, StateValue state)
@@ -180,6 +180,16 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 		// - method calls
 		// - value returned from a method
 
+		public override MultiValue GetFieldTargetValue (IFieldSymbol field)
+		{
+			return field.Type.IsTypeInterestingForDataflow () ? new FieldValue (field) : TopValue;
+		}
+
+		public override MultiValue GetParameterTargetValue (IParameterSymbol parameter)
+		{
+			return parameter.Type.IsTypeInterestingForDataflow () ? new MethodParameterValue (parameter) : TopValue;
+		}
+
 		public override void HandleAssignment (MultiValue source, MultiValue target, IOperation operation)
 		{
 			if (target.Equals (TopValue))
@@ -188,6 +198,7 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 			// TODO: consider not tracking patterns unless the target is something
 			// annotated with DAMT.
 			TrimAnalysisPatterns.Add (
+				// This will copy the values if necessary
 				new TrimAnalysisAssignmentPattern (source, target, operation),
 				isReturnValue: false
 			);
@@ -195,16 +206,17 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 
 		public override MultiValue HandleArrayElementRead (MultiValue arrayValue, MultiValue indexValue, IOperation operation)
 		{
-			if (arrayValue.AsSingleValue () is not ArrayValue arr)
-				return UnknownValue.Instance;
-
 			if (indexValue.AsConstInt () is not int index)
 				return UnknownValue.Instance;
 
-			if (arr.TryGetValueByIndex (index, out var elementValue))
-				return elementValue;
-
-			return UnknownValue.Instance;
+			MultiValue result = TopValue;
+			foreach (var value in arrayValue) {
+				if (value is ArrayValue arr && arr.TryGetValueByIndex (index, out var elementValue))
+					result = _multiValueLattice.Meet (result, elementValue);
+				else
+					return UnknownValue.Instance;
+			}
+			return result.Equals (TopValue) ? UnknownValue.Instance : result;
 		}
 
 		public override void HandleArrayElementWrite (MultiValue arrayValue, MultiValue indexValue, MultiValue valueToWrite, IOperation operation)
@@ -239,29 +251,34 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 			//   to noise). Linker has the same problem currently: https://github.com/dotnet/linker/issues/1952
 
 			var diagnosticContext = DiagnosticContext.CreateDisabled ();
-			var handleCallAction = new HandleCallAction (diagnosticContext, Context.OwningSymbol, operation);
+			var handleCallAction = new HandleCallAction (diagnosticContext, Method, operation);
+
 			if (!handleCallAction.Invoke (new MethodProxy (calledMethod), instance, arguments, out MultiValue methodReturnValue, out var intrinsicId)) {
 				switch (intrinsicId) {
 				case IntrinsicId.Array_Empty:
 					methodReturnValue = ArrayValue.Create (0);
 					break;
 
-				default:
-					if (!calledMethod.ReturnsVoid && calledMethod.ReturnType.IsTypeInterestingForDataflow ())
-						methodReturnValue = new MethodReturnValue (calledMethod);
+				case IntrinsicId.TypeDelegator_Ctor:
+					if (operation is IObjectCreationOperation)
+						methodReturnValue = arguments[0];
 					else
 						methodReturnValue = TopValue;
 
 					break;
+
+				default:
+					throw new InvalidOperationException ($"Unexpected method {calledMethod.GetDisplayName ()} unhandled by HandleCallAction.");
 				}
 			}
 
+			// This will copy the values if necessary
 			TrimAnalysisPatterns.Add (new TrimAnalysisMethodCallPattern (
 				calledMethod,
 				instance,
 				arguments,
 				operation,
-				Context.OwningSymbol));
+				Method));
 
 			foreach (var argument in arguments) {
 				foreach (var argumentValue in argument) {
@@ -275,15 +292,58 @@ namespace ILLink.RoslynAnalyzer.TrimAnalysis
 
 		public override void HandleReturnValue (MultiValue returnValue, IOperation operation)
 		{
-			var associatedMethod = (IMethodSymbol) Context.OwningSymbol;
-			if (associatedMethod.ReturnType.IsTypeInterestingForDataflow ()) {
-				var returnParameter = new MethodReturnValue (associatedMethod);
+			if (Method.ReturnType.IsTypeInterestingForDataflow ()) {
+				var returnParameter = new MethodReturnValue (Method);
 
 				TrimAnalysisPatterns.Add (
 					new TrimAnalysisAssignmentPattern (returnValue, returnParameter, operation),
 					isReturnValue: true
 				);
 			}
+		}
+
+		static bool TryGetConstantValue (IOperation operation, out MultiValue constValue)
+		{
+			if (operation.ConstantValue.HasValue) {
+				object? constantValue = operation.ConstantValue.Value;
+				if (constantValue == null) {
+					constValue = NullValue.Instance;
+					return true;
+				} else if (operation.Type?.TypeKind == TypeKind.Enum && constantValue is int enumConstantValue) {
+					constValue = new ConstIntValue (enumConstantValue);
+					return true;
+				} else {
+					switch (operation.Type?.SpecialType) {
+					case SpecialType.System_String when constantValue is string stringConstantValue:
+						constValue = new KnownStringValue (stringConstantValue);
+						return true;
+					case SpecialType.System_Boolean when constantValue is bool boolConstantValue:
+						constValue = new ConstIntValue (boolConstantValue ? 1 : 0);
+						return true;
+					case SpecialType.System_SByte when constantValue is sbyte sbyteConstantValue:
+						constValue = new ConstIntValue (sbyteConstantValue);
+						return true;
+					case SpecialType.System_Byte when constantValue is byte byteConstantValue:
+						constValue = new ConstIntValue (byteConstantValue);
+						return true;
+					case SpecialType.System_Int16 when constantValue is Int16 int16ConstantValue:
+						constValue = new ConstIntValue (int16ConstantValue);
+						return true;
+					case SpecialType.System_UInt16 when constantValue is UInt16 uint16ConstantValue:
+						constValue = new ConstIntValue (uint16ConstantValue);
+						return true;
+					case SpecialType.System_Int32 when constantValue is Int32 int32ConstantValue:
+						constValue = new ConstIntValue (int32ConstantValue);
+						return true;
+					case SpecialType.System_UInt32 when constantValue is UInt32 uint32ConstantValue:
+						constValue = new ConstIntValue ((int) uint32ConstantValue);
+						return true;
+					}
+				}
+			}
+
+			constValue = default;
+			return false;
 		}
 	}
 }

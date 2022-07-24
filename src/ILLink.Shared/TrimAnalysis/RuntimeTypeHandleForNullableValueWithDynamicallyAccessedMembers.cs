@@ -5,6 +5,9 @@ using System.Diagnostics;
 using ILLink.Shared.DataFlow;
 using ILLink.Shared.TypeSystemProxy;
 
+// This is needed due to NativeAOT which doesn't enable nullable globally yet
+#nullable enable
+
 namespace ILLink.Shared.TrimAnalysis
 {
 	/// <summary>
@@ -15,7 +18,7 @@ namespace ILLink.Shared.TrimAnalysis
 	{
 		public RuntimeTypeHandleForNullableValueWithDynamicallyAccessedMembers (in TypeProxy nullableType, in SingleValue underlyingTypeValue)
 		{
-			Debug.Assert (nullableType.IsTypeOf ("System", "Nullable`1"));
+			Debug.Assert (nullableType.IsTypeOf (WellKnownType.System_Nullable_T));
 			NullableType = nullableType;
 			UnderlyingTypeValue = underlyingTypeValue;
 		}

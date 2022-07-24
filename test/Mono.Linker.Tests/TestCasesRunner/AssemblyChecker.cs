@@ -146,6 +146,10 @@ namespace Mono.Linker.Tests.TestCasesRunner
 
 			VerifyFixedBufferFields (original, linked);
 
+			// Need to check delegate cache fields before the normal field check
+			VerifyDelegateBackingFields (original, linked);
+			VerifyPrivateImplementationDetails (original, linked);
+
 			foreach (var td in original.NestedTypes) {
 				VerifyTypeDefinition (td, linked?.NestedTypes.FirstOrDefault (l => td.FullName == l.FullName));
 				linkedMembers.Remove (td.FullName);
@@ -161,9 +165,6 @@ namespace Mono.Linker.Tests.TestCasesRunner
 				VerifyEvent (e, linked?.Events.FirstOrDefault (l => e.Name == l.Name), linked);
 				linkedMembers.Remove (e.FullName);
 			}
-
-			// Need to check delegate cache fields before the normal field check
-			VerifyDelegateBackingFields (original, linked);
 
 			foreach (var f in original.Fields) {
 				if (verifiedGeneratedFields.Contains (f.FullName))
@@ -209,6 +210,53 @@ namespace Mono.Linker.Tests.TestCasesRunner
 				}
 
 				Assert.IsEmpty (expectedInterfaces, $"Expected interfaces were not found on {src}");
+			}
+		}
+
+		void VerifyOverrides (MethodDefinition original, MethodDefinition linked)
+		{
+			if (linked is null)
+				return;
+			var expectedBaseTypesOverridden = new HashSet<string> (original.CustomAttributes
+				.Where (ca => ca.AttributeType.Name == nameof (KeptOverrideAttribute))
+				.Select (ca => (ca.ConstructorArguments[0].Value as TypeReference).FullName));
+			var originalBaseTypesOverridden = new HashSet<string> (original.Overrides.Select (ov => ov.DeclaringType.FullName));
+			var linkedBaseTypesOverridden = new HashSet<string> (linked.Overrides.Select (ov => ov.DeclaringType.FullName));
+			foreach (var expectedBaseType in expectedBaseTypesOverridden) {
+				Assert.IsTrue (originalBaseTypesOverridden.Contains (expectedBaseType),
+					$"Method {linked.FullName} was expected to keep override {expectedBaseType}::{linked.Name}, " +
+					 "but it wasn't in the unlinked assembly");
+				Assert.IsTrue (linkedBaseTypesOverridden.Contains (expectedBaseType),
+					$"Method {linked.FullName} was expected to override {expectedBaseType}::{linked.Name}");
+			}
+
+			var expectedBaseTypesNotOverridden = new HashSet<string> (original.CustomAttributes
+				.Where (ca => ca.AttributeType.Name == nameof (RemovedOverrideAttribute))
+				.Select (ca => (ca.ConstructorArguments[0].Value as TypeReference).FullName));
+			foreach (var expectedRemovedBaseType in expectedBaseTypesNotOverridden) {
+				Assert.IsTrue (originalBaseTypesOverridden.Contains (expectedRemovedBaseType),
+					$"Method {linked.FullName} was expected to remove override {expectedRemovedBaseType}::{linked.Name}, " +
+					$"but it wasn't in the unlinked assembly");
+				Assert.IsFalse (linkedBaseTypesOverridden.Contains (expectedRemovedBaseType),
+					$"Method {linked.FullName} was expected to not override {expectedRemovedBaseType}::{linked.Name}");
+			}
+
+			foreach (var overriddenMethod in linked.Overrides) {
+				if (overriddenMethod.Resolve () is not MethodDefinition overriddenDefinition) {
+					Assert.Fail ($"Method {linked.GetDisplayName ()} overrides method {overriddenMethod} which does not exist");
+				} else if (overriddenDefinition.DeclaringType.IsInterface) {
+					Assert.True (linked.DeclaringType.Interfaces.Select (i => i.InterfaceType).Contains (overriddenMethod.DeclaringType),
+						$"Method {linked} overrides method {overriddenMethod}, but {linked.DeclaringType} does not implement interface {overriddenMethod.DeclaringType}");
+				} else {
+					TypeReference baseType = linked.DeclaringType;
+					TypeReference overriddenType = overriddenMethod.DeclaringType;
+					while (baseType is not null) {
+						if (baseType.Equals (overriddenType))
+							break;
+						if (baseType.Resolve ()?.BaseType is null)
+							Assert.Fail ($"Method {linked} overrides method {overriddenMethod} from, but {linked.DeclaringType} does not inherit from type {overriddenMethod.DeclaringType}");
+					}
+				}
 			}
 		}
 
@@ -443,6 +491,11 @@ namespace Mono.Linker.Tests.TestCasesRunner
 				if (instr.Operand is Instruction target)
 					return $"{instr.OpCode.ToString ()} il_{target.Offset.ToString ("x")}";
 
+				if (instr.Operand is Instruction[] targets) {
+					string stargets = string.Join (", ", targets.Select (l => $"il_{l.Offset.ToString ("x")}"));
+					return $"{instr.OpCode.ToString ()} ({stargets})";
+				}
+
 				break;
 			}
 
@@ -555,10 +608,10 @@ namespace Mono.Linker.Tests.TestCasesRunner
 			/*
 			 - The test case will always need to have at least 1 reference.
 			 - Forcing all tests to define their expected references seems tedious
-			 
+
 			 Given the above, let's assume that when no [KeptReference] attributes are present,
 			 the test case does not want to make any assertions regarding references.
-			 
+
 			 Once 1 kept reference attribute is used, the test will need to define all of of it's expected references
 			*/
 			if (expected.Length == 0)
@@ -657,6 +710,41 @@ namespace Mono.Linker.Tests.TestCasesRunner
 			Assert.That (linkedAttrs, Is.EquivalentTo (expectedAttrs), $"Security attributes on `{src}' are not matching");
 		}
 
+		void VerifyPrivateImplementationDetails (TypeDefinition original, TypeDefinition linked)
+		{
+			var expectedImplementationDetailsMethods = GetCustomAttributeCtorValues<string> (original, nameof (KeptPrivateImplementationDetailsAttribute))
+				.Select (attr => attr.ToString ())
+				.ToList ();
+
+			if (expectedImplementationDetailsMethods.Count == 0)
+				return;
+
+			VerifyPrivateImplementationDetailsType (original.Module, linked.Module, out TypeDefinition srcImplementationDetails, out TypeDefinition linkedImplementationDetails);
+			foreach (var methodName in expectedImplementationDetailsMethods) {
+				var originalMethod = srcImplementationDetails.Methods.FirstOrDefault (m => m.Name == methodName);
+				if (originalMethod == null)
+					Assert.Fail ($"Could not locate original private implementation details method {methodName}");
+
+				var linkedMethod = linkedImplementationDetails.Methods.FirstOrDefault (m => m.Name == methodName);
+				VerifyMethodKept (originalMethod, linkedMethod);
+				linkedMembers.Remove (linkedMethod.FullName);
+			}
+			verifiedGeneratedTypes.Add (srcImplementationDetails.FullName);
+		}
+
+		static void VerifyPrivateImplementationDetailsType (ModuleDefinition src, ModuleDefinition linked, out TypeDefinition srcImplementationDetails, out TypeDefinition linkedImplementationDetails)
+		{
+			srcImplementationDetails = src.Types.FirstOrDefault (t => string.IsNullOrEmpty (t.Namespace) && t.Name.StartsWith ("<PrivateImplementationDetails>"));
+
+			if (srcImplementationDetails == null)
+				Assert.Fail ("Could not locate <PrivateImplementationDetails> in the original assembly.  Does your test use initializers?");
+
+			linkedImplementationDetails = linked.Types.FirstOrDefault (t => string.IsNullOrEmpty (t.Namespace) && t.Name.StartsWith ("<PrivateImplementationDetails>"));
+
+			if (linkedImplementationDetails == null)
+				Assert.Fail ("Could not locate <PrivateImplementationDetails> in the linked assembly");
+		}
+
 		protected virtual void VerifyArrayInitializers (MethodDefinition src, MethodDefinition linked)
 		{
 			var expectedIndicies = GetCustomAttributeCtorValues<object> (src, nameof (KeptInitializerData))
@@ -671,15 +759,7 @@ namespace Mono.Linker.Tests.TestCasesRunner
 			if (!src.HasBody)
 				Assert.Fail ($"`{nameof (KeptInitializerData)}` cannot be used on methods that don't have bodies");
 
-			var srcImplementationDetails = src.Module.Types.FirstOrDefault (t => string.IsNullOrEmpty (t.Namespace) && t.Name.StartsWith ("<PrivateImplementationDetails>"));
-
-			if (srcImplementationDetails == null)
-				Assert.Fail ("Could not locate <PrivateImplementationDetails> in the original assembly.  Does your test use initializers?");
-
-			var linkedImplementationDetails = linked.Module.Types.FirstOrDefault (t => string.IsNullOrEmpty (t.Namespace) && t.Name.StartsWith ("<PrivateImplementationDetails>"));
-
-			if (linkedImplementationDetails == null)
-				Assert.Fail ("Could not locate <PrivateImplementationDetails> in the linked assembly");
+			VerifyPrivateImplementationDetailsType (src.Module, linked.Module, out TypeDefinition srcImplementationDetails, out TypeDefinition linkedImplementationDetails);
 
 			var possibleInitializerFields = src.Body.Instructions
 				.Where (ins => IsLdtokenOnPrivateImplementationDetails (srcImplementationDetails, ins))
@@ -819,21 +899,33 @@ namespace Mono.Linker.Tests.TestCasesRunner
 
 		void VerifyDelegateBackingFields (TypeDefinition src, TypeDefinition linked)
 		{
-			var expectedFieldNames = GetCustomAttributeCtorValues<string> (src, nameof (KeptDelegateCacheFieldAttribute))
-				.Select (unique => $"<>f__mg$cache{unique}")
+			var expectedFieldNames = src.CustomAttributes
+				.Where (a => a.AttributeType.Name == nameof (KeptDelegateCacheFieldAttribute))
+				.Select (a => (a.ConstructorArguments[0].Value as string, a.ConstructorArguments[1].Value as string))
+				.Select (indexAndField => $"<{indexAndField.Item1}>__{indexAndField.Item2}")
 				.ToList ();
 
 			if (expectedFieldNames.Count == 0)
 				return;
 
-			foreach (var srcField in src.Fields) {
-				if (!expectedFieldNames.Contains (srcField.Name))
+			foreach (var nestedType in src.NestedTypes) {
+				if (nestedType.Name != "<>O")
 					continue;
 
-				var linkedField = linked?.Fields.FirstOrDefault (l => l.Name == srcField.Name);
-				VerifyFieldKept (srcField, linkedField);
-				verifiedGeneratedFields.Add (srcField.FullName);
-				linkedMembers.Remove (srcField.FullName);
+				var linkedNestedType = linked.NestedTypes.FirstOrDefault (t => t.Name == nestedType.Name);
+				foreach (var expectedFieldName in expectedFieldNames) {
+					var originalField = nestedType.Fields.FirstOrDefault (f => f.Name == expectedFieldName);
+					if (originalField is null)
+						Assert.Fail ($"Invalid expected delegate backing field {expectedFieldName} in {src}. This member was not in the unlinked assembly");
+
+					var linkedField = linkedNestedType?.Fields.FirstOrDefault (f => f.Name == expectedFieldName);
+					VerifyFieldKept (originalField, linkedField);
+					verifiedGeneratedFields.Add (linkedField.FullName);
+					linkedMembers.Remove (linkedField.FullName);
+				}
+
+				VerifyTypeDefinitionKept (nestedType, linkedNestedType);
+				verifiedGeneratedTypes.Add (linkedNestedType.FullName);
 			}
 		}
 

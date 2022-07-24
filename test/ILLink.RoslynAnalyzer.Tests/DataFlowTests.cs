@@ -59,7 +59,25 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task CompilerGeneratedCodeDataflow ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
+		public Task CompilerGeneratedTypes ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
 		public Task ComplexTypeHandling ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
+		public Task CompilerGeneratedCodeAccessedViaReflection ()
 		{
 			return RunTest ();
 		}
@@ -78,6 +96,12 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task EventDataFlow ()
+		{
+			return RunTest ();
+		}
+
+		[Fact]
 		public Task FieldDataFlow ()
 		{
 			return RunTest (nameof (FieldDataFlow));
@@ -92,8 +116,13 @@ namespace ILLink.RoslynAnalyzer.Tests
 		[Fact]
 		public Task MakeGenericDataFlow ()
 		{
-			// https://github.com/dotnet/linker/issues/2273
-			return RunTest (allowMissingWarnings: true);
+			return RunTest ();
+		}
+
+		[Fact]
+		public Task MethodByRefReturnDataFlow ()
+		{
+			return RunTest ();
 		}
 
 		[Fact]
@@ -112,8 +141,7 @@ namespace ILLink.RoslynAnalyzer.Tests
 		[Fact]
 		public Task GetTypeDataFlow ()
 		{
-			// https://github.com/dotnet/linker/issues/2273
-			return RunTest (allowMissingWarnings: true);
+			return RunTest ();
 		}
 
 		[Fact]

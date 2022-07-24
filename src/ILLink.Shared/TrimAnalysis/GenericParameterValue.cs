@@ -3,6 +3,9 @@
 
 using ILLink.Shared.TypeSystemProxy;
 
+// This is needed due to NativeAOT which doesn't enable nullable globally yet
+#nullable enable
+
 namespace ILLink.Shared.TrimAnalysis
 {
 	/// <summary>
@@ -12,7 +15,5 @@ namespace ILLink.Shared.TrimAnalysis
 	sealed partial record GenericParameterValue : ValueWithDynamicallyAccessedMembers
 	{
 		public readonly GenericParameterProxy GenericParameter;
-
-		public partial bool HasDefaultConstructorConstraint ();
 	}
 }

@@ -10,6 +10,7 @@ namespace Mono.Linker.Tests.Cases.Reflection
 	[SetupCSharpCompilerToUse ("csc")]
 	[Reference ("System.Core.dll")]
 	[ExpectedNoWarnings]
+	[KeptPrivateImplementationDetails ("ThrowSwitchExpressionException")]
 	public class ExpressionCallString
 	{
 		public static void Main ()
@@ -284,7 +285,8 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			}
 
 			[Kept]
-			[ExpectedWarning ("IL2060", "Expression.Call")]
+			// https://github.com/dotnet/linker/issues/2755
+			[ExpectedWarning ("IL2060", "Expression.Call", ProducedBy = ProducedBy.Trimmer)]
 			static void TestMethodWithRequirementsUnknownTypeArray (Type[] types)
 			{
 				// The passed in types array cannot be analyzed, so a warning is produced.
@@ -358,6 +360,32 @@ namespace Mono.Linker.Tests.Cases.Reflection
 			}
 
 			[Kept]
+			[KeptMember (".cctor()")]
+			class TwoKnownTypeArrays
+			{
+				[Kept]
+				public static void GenericMethodWithRequirements<
+					[KeptAttributeAttribute (typeof (DynamicallyAccessedMembersAttribute))]
+				[DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicProperties)] T> ()
+				{ }
+
+				[Kept]
+				static string _unknownMethodName = "NoMethod";
+
+				[Kept]
+				[ExpectedWarning ("IL2060", "Expression.Call")]
+				public static void Test (int p = 0)
+				{
+					Type[] types = p switch {
+						0 => new Type[] { typeof (TestType) },
+						1 => new Type[] { typeof (TestType) }
+					};
+
+					Expression.Call (typeof (TwoKnownTypeArrays), _unknownMethodName, types);
+				}
+			}
+
+			[Kept]
 			public static void Test ()
 			{
 				TestWithNoTypeParameters ();
@@ -369,6 +397,7 @@ namespace Mono.Linker.Tests.Cases.Reflection
 				UnknownMethodWithRequirements.TestWithoutTypeParameters ();
 				UnknownTypeWithRequirements.TestWithTypeParameters ();
 				UnknownTypeWithRequirements.TestWithoutTypeParameters ();
+				TwoKnownTypeArrays.Test ();
 			}
 
 			[Kept]

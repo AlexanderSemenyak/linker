@@ -245,21 +245,21 @@ namespace Mono.Linker.Tests.TestCasesRunner
 						switch (attributeTypeName) {
 						case nameof (RemovedTypeInAssemblyAttribute):
 							if (linkedType != null)
-								Assert.Fail ($"Type `{expectedTypeName}' should have been removed");
+								Assert.Fail ($"Type `{expectedTypeName}' should have been removed from assembly {assemblyName}");
 							GetOriginalTypeFromInAssemblyAttribute (checkAttrInAssembly);
 							break;
 						case nameof (KeptTypeInAssemblyAttribute):
 							if (linkedType == null)
-								Assert.Fail ($"Type `{expectedTypeName}' should have been kept");
+								Assert.Fail ($"Type `{expectedTypeName}' should have been kept in assembly {assemblyName}");
 							break;
 						case nameof (RemovedInterfaceOnTypeInAssemblyAttribute):
 							if (linkedType == null)
-								Assert.Fail ($"Type `{expectedTypeName}' should have been kept");
+								Assert.Fail ($"Type `{expectedTypeName}' should have been kept in assembly {assemblyName}");
 							VerifyRemovedInterfaceOnTypeInAssembly (checkAttrInAssembly, linkedType);
 							break;
 						case nameof (KeptInterfaceOnTypeInAssemblyAttribute):
 							if (linkedType == null)
-								Assert.Fail ($"Type `{expectedTypeName}' should have been kept");
+								Assert.Fail ($"Type `{expectedTypeName}' should have been kept in assembly {assemblyName}");
 							VerifyKeptInterfaceOnTypeInAssembly (checkAttrInAssembly, linkedType);
 							break;
 						case nameof (RemovedMemberInAssemblyAttribute):
@@ -270,24 +270,24 @@ namespace Mono.Linker.Tests.TestCasesRunner
 							break;
 						case nameof (KeptBaseOnTypeInAssemblyAttribute):
 							if (linkedType == null)
-								Assert.Fail ($"Type `{expectedTypeName}' should have been kept");
+								Assert.Fail ($"Type `{expectedTypeName}' should have been kept in assembly {assemblyName}");
 							VerifyKeptBaseOnTypeInAssembly (checkAttrInAssembly, linkedType);
 							break;
 						case nameof (KeptMemberInAssemblyAttribute):
 							if (linkedType == null)
-								Assert.Fail ($"Type `{expectedTypeName}' should have been kept");
+								Assert.Fail ($"Type `{expectedTypeName}' should have been kept in assembly {assemblyName}");
 
 							VerifyKeptMemberInAssembly (checkAttrInAssembly, linkedType);
 							break;
 						case nameof (RemovedForwarderAttribute):
 							if (linkedAssembly.MainModule.ExportedTypes.Any (l => l.Name == expectedTypeName))
-								Assert.Fail ($"Forwarder `{expectedTypeName}' should have been removed");
+								Assert.Fail ($"Forwarder `{expectedTypeName}' should have been removed from assembly {assemblyName}");
 
 							break;
 
 						case nameof (RemovedAssemblyReferenceAttribute):
 							Assert.False (linkedAssembly.MainModule.AssemblyReferences.Any (l => l.Name == expectedTypeName),
-								$"AssemblyRef '{expectedTypeName}' should have been removed");
+								$"AssemblyRef '{expectedTypeName}' should have been removed from assembly {assemblyName}");
 							break;
 
 						case nameof (KeptResourceInAssemblyAttribute):
@@ -301,7 +301,7 @@ namespace Mono.Linker.Tests.TestCasesRunner
 							break;
 						case nameof (ExpectedInstructionSequenceOnMemberInAssemblyAttribute):
 							if (linkedType == null)
-								Assert.Fail ($"Type `{expectedTypeName}` should have been kept");
+								Assert.Fail ($"Type `{expectedTypeName}` should have been kept in assembly {assemblyName}");
 							VerifyExpectedInstructionSequenceOnMemberInAssembly (checkAttrInAssembly, linkedType);
 							break;
 						default:
@@ -776,11 +776,10 @@ namespace Mono.Linker.Tests.TestCasesRunner
 											continue;
 									}
 								} else if (isCompilerGeneratedCode == true) {
-									if (loggedMessage.Origin?.Provider is MethodDefinition methodDefinition) {
+									if (loggedMessage.Origin?.Provider is IMemberDefinition memberDefinition) {
 										if (attrProvider is not IMemberDefinition expectedMember)
 											continue;
-
-										string actualName = methodDefinition.DeclaringType.FullName + "." + methodDefinition.Name;
+										string actualName = memberDefinition.DeclaringType.FullName + "." + memberDefinition.Name;
 
 										if (actualName.StartsWith (expectedMember.DeclaringType.FullName) &&
 											actualName.Contains ("<" + expectedMember.Name + ">")) {
@@ -788,14 +787,16 @@ namespace Mono.Linker.Tests.TestCasesRunner
 											loggedMessages.Remove (loggedMessage);
 											break;
 										}
+										if (memberDefinition is not MethodDefinition)
+											continue;
 										if (actualName.StartsWith (expectedMember.DeclaringType.FullName) &&
 											actualName.Contains (".cctor") && (expectedMember is FieldDefinition || expectedMember is PropertyDefinition)) {
 											expectedWarningFound = true;
 											loggedMessages.Remove (loggedMessage);
 											break;
 										}
-										if (methodDefinition.Name == ".ctor" &&
-										methodDefinition.DeclaringType.FullName == expectedMember.FullName) {
+										if (memberDefinition.Name == ".ctor" &&
+											memberDefinition.DeclaringType.FullName == expectedMember.FullName) {
 											expectedWarningFound = true;
 											loggedMessages.Remove (loggedMessage);
 											break;
@@ -833,13 +834,14 @@ namespace Mono.Linker.Tests.TestCasesRunner
 						}
 						break;
 
-					case nameof (ExpectedNoWarningsAttribute):
-						// Postpone processing of negative checks, to make it possible to mark some warnings as expected (will be removed from the list above)
-						// and then do the negative check on the rest.
-						var memberDefinition = attrProvider as IMemberDefinition;
-						Assert.NotNull (memberDefinition);
-						expectedNoWarningsAttributes.Add ((memberDefinition, attr));
-						break;
+					case nameof (ExpectedNoWarningsAttribute): {
+							// Postpone processing of negative checks, to make it possible to mark some warnings as expected (will be removed from the list above)
+							// and then do the negative check on the rest.
+							var memberDefinition = attrProvider as IMemberDefinition;
+							Assert.NotNull (memberDefinition);
+							expectedNoWarningsAttributes.Add ((memberDefinition, attr));
+							break;
+						}
 					}
 				}
 			}

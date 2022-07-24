@@ -8,6 +8,9 @@ using System.Runtime.InteropServices;
 using ILLink.Shared.TypeSystemProxy;
 using MultiValue = ILLink.Shared.DataFlow.ValueSet<ILLink.Shared.DataFlow.SingleValue>;
 
+// This is needed due to NativeAOT which doesn't enable nullable globally yet
+#nullable enable
+
 namespace ILLink.Shared.TrimAnalysis
 {
 	[StructLayout (LayoutKind.Auto)]
@@ -23,7 +26,7 @@ namespace ILLink.Shared.TrimAnalysis
 			foreach (var uniqueValue in value) {
 				if (targetValue.DynamicallyAccessedMemberTypes == DynamicallyAccessedMemberTypes.PublicParameterlessConstructor
 					&& uniqueValue is GenericParameterValue genericParam
-					&& genericParam.HasDefaultConstructorConstraint ()) {
+					&& genericParam.GenericParameter.HasDefaultConstructorConstraint ()) {
 					// We allow a new() constraint on a generic parameter to satisfy DynamicallyAccessedMemberTypes.PublicParameterlessConstructor
 				} else if (uniqueValue is ValueWithDynamicallyAccessedMembers valueWithDynamicallyAccessedMembers) {
 					if (uniqueValue is NullableValueWithDynamicallyAccessedMembers nullableValue) {
@@ -37,7 +40,7 @@ namespace ILLink.Shared.TrimAnalysis
 				} else if (uniqueValue is SystemTypeValue systemTypeValue) {
 					MarkTypeForDynamicallyAccessedMembers (systemTypeValue.RepresentedType, targetValue.DynamicallyAccessedMemberTypes);
 				} else if (uniqueValue is KnownStringValue knownStringValue) {
-					if (!TryResolveTypeNameAndMark (knownStringValue.Contents, out TypeProxy foundType)) {
+					if (!TryResolveTypeNameAndMark (knownStringValue.Contents, true, out TypeProxy foundType)) {
 						// Intentionally ignore - it's not wrong for code to call Type.GetType on non-existing name, the code might expect null/exception back.
 					} else {
 						MarkTypeForDynamicallyAccessedMembers (foundType, targetValue.DynamicallyAccessedMemberTypes);
@@ -62,7 +65,7 @@ namespace ILLink.Shared.TrimAnalysis
 			}
 		}
 
-		private partial bool TryResolveTypeNameAndMark (string typeName, out TypeProxy type);
+		public partial bool TryResolveTypeNameAndMark (string typeName, bool needsAssemblyName, out TypeProxy type);
 
 		private partial void MarkTypeForDynamicallyAccessedMembers (in TypeProxy type, DynamicallyAccessedMemberTypes dynamicallyAccessedMemberTypes);
 	}

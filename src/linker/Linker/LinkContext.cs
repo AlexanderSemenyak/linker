@@ -35,8 +35,10 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using ILLink.Shared;
+using ILLink.Shared.TypeSystemProxy;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
+using Mono.Linker.Dataflow;
 using Mono.Linker.Steps;
 
 namespace Mono.Linker
@@ -739,7 +741,7 @@ namespace Mono.Linker
 			if (_targetRuntime != null)
 				return _targetRuntime.Value;
 
-			TypeDefinition? objectType = BCL.FindPredefinedType ("System", "Object", this);
+			TypeDefinition? objectType = BCL.FindPredefinedType (WellKnownType.System_Object, this);
 			_targetRuntime = objectType?.Module.Assembly.Name.Version.Major ?? -1;
 
 			return _targetRuntime.Value;
@@ -879,7 +881,7 @@ namespace Mono.Linker
 		public TypeDefinition? TryResolve (AssemblyDefinition assembly, string typeNameString)
 		{
 			// It could be cached if it shows up on fast path
-			return _typeNameResolver.TryResolveTypeName (assembly, typeNameString, out TypeReference? typeReference)
+			return _typeNameResolver.TryResolveTypeName (assembly, typeNameString, out TypeReference? typeReference, out _)
 				? TryResolve (typeReference)
 				: null;
 		}

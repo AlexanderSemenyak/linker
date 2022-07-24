@@ -66,6 +66,17 @@ namespace Mono.Linker
 			ILOffset = other.ILOffset;
 		}
 
+		public MessageOrigin (MessageOrigin other, int ilOffset)
+		{
+			FileName = other.FileName;
+			Provider = other.Provider;
+			SourceLine = other.SourceLine;
+			SourceColumn = other.SourceColumn;
+			ILOffset = ilOffset;
+		}
+
+		public MessageOrigin WithInstructionOffset (int ilOffset) => new MessageOrigin (this, ilOffset);
+
 		public override string? ToString ()
 		{
 			int sourceLine = SourceLine, sourceColumn = SourceColumn;
@@ -109,7 +120,7 @@ namespace Mono.Linker
 			(FileName, Provider, SourceLine, SourceColumn, ILOffset) == (other.FileName, other.Provider, other.SourceLine, other.SourceColumn, other.ILOffset);
 
 		public override bool Equals (object? obj) => obj is MessageOrigin messageOrigin && Equals (messageOrigin);
-		public override int GetHashCode () => (FileName, Provider, SourceLine, SourceColumn).GetHashCode ();
+		public override int GetHashCode () => (FileName, Provider, SourceLine, SourceColumn, ILOffset).GetHashCode ();
 		public static bool operator == (MessageOrigin lhs, MessageOrigin rhs) => lhs.Equals (rhs);
 		public static bool operator != (MessageOrigin lhs, MessageOrigin rhs) => !lhs.Equals (rhs);
 

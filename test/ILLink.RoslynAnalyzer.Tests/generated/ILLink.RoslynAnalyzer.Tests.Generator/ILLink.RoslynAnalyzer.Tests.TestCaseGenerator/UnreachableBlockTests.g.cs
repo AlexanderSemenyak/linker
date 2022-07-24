@@ -20,6 +20,18 @@ namespace ILLink.RoslynAnalyzer.Tests
 		}
 
 		[Fact]
+		public Task ComplexConditionsOptimized ()
+		{
+			return RunTest (allowMissingWarnings: true);
+		}
+
+		[Fact]
+		public Task DataFlowRelated ()
+		{
+			return RunTest (allowMissingWarnings: true);
+		}
+
+		[Fact]
 		public Task DeadVariables ()
 		{
 			return RunTest (allowMissingWarnings: true);
@@ -51,6 +63,12 @@ namespace ILLink.RoslynAnalyzer.Tests
 
 		[Fact]
 		public Task MultiStageRemoval ()
+		{
+			return RunTest (allowMissingWarnings: true);
+		}
+
+		[Fact]
+		public Task ReplacedJumpTarget ()
 		{
 			return RunTest (allowMissingWarnings: true);
 		}

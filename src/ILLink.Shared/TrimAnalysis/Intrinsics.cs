@@ -3,6 +3,9 @@
 
 using ILLink.Shared.TypeSystemProxy;
 
+// This is needed due to NativeAOT which doesn't enable nullable globally yet
+#nullable enable
+
 namespace ILLink.Shared.TrimAnalysis
 {
 	static class Intrinsics
@@ -19,7 +22,7 @@ namespace ILLink.Shared.TrimAnalysis
 				// System.Type.GetTypeInfo (Type type)
 				"GetTypeFromHandle" when calledMethod.IsDeclaredOnType ("System.Type") => IntrinsicId.Type_GetTypeFromHandle,
 
-				// System.Type.GetTypeHandle (Type type)
+				// System.Type.TypeHandle getter
 				"get_TypeHandle" when calledMethod.IsDeclaredOnType ("System.Type") => IntrinsicId.Type_get_TypeHandle,
 
 				// System.Reflection.MethodBase.GetMethodFromHandle (RuntimeMethodHandle handle)
@@ -28,6 +31,9 @@ namespace ILLink.Shared.TrimAnalysis
 					&& calledMethod.HasParameterOfType (0, "System.RuntimeMethodHandle")
 					&& (calledMethod.HasParametersCount (1) || calledMethod.HasParametersCount (2))
 					=> IntrinsicId.MethodBase_GetMethodFromHandle,
+
+				// System.Reflection.MethodBase.MethodHandle getter
+				"get_MethodHandle" when calledMethod.IsDeclaredOnType ("System.Reflection.MethodBase") => IntrinsicId.MethodBase_get_MethodHandle,
 
 				// static System.Type.MakeGenericType (Type [] typeArguments)
 				"MakeGenericType" when calledMethod.IsDeclaredOnType ("System.Type") => IntrinsicId.Type_MakeGenericType,
@@ -80,6 +86,42 @@ namespace ILLink.Shared.TrimAnalysis
 					&& calledMethod.HasParameterOfType (0, "System.Type")
 					&& calledMethod.HasParametersCount (1)
 					=> IntrinsicId.Expression_New,
+
+				// static Array System.Enum.GetValues (Type)
+				"GetValues" when calledMethod.IsDeclaredOnType ("System.Enum")
+					&& calledMethod.HasParameterOfType (0, "System.Type")
+					&& calledMethod.HasParametersCount (1)
+					=> IntrinsicId.Enum_GetValues,
+
+				// static int System.Runtime.InteropServices.Marshal.SizeOf (Type)
+				"SizeOf" when calledMethod.IsDeclaredOnType ("System.Runtime.InteropServices.Marshal")
+					&& calledMethod.HasParameterOfType (0, "System.Type")
+					&& calledMethod.HasParametersCount (1)
+					=> IntrinsicId.Marshal_SizeOf,
+
+				// static int System.Runtime.InteropServices.Marshal.OffsetOf (Type, string)
+				"OffsetOf" when calledMethod.IsDeclaredOnType ("System.Runtime.InteropServices.Marshal")
+					&& calledMethod.HasParameterOfType (0, "System.Type")
+					&& calledMethod.HasParametersCount (2)
+					=> IntrinsicId.Marshal_OffsetOf,
+
+				// static object System.Runtime.InteropServices.Marshal.PtrToStructure (IntPtr, Type)
+				"PtrToStructure" when calledMethod.IsDeclaredOnType ("System.Runtime.InteropServices.Marshal")
+					&& calledMethod.HasParameterOfType (1, "System.Type")
+					&& calledMethod.HasParametersCount (2)
+					=> IntrinsicId.Marshal_PtrToStructure,
+
+				// static void System.Runtime.InteropServices.Marshal.DestroyStructure (IntPtr, Type)
+				"DestroyStructure" when calledMethod.IsDeclaredOnType ("System.Runtime.InteropServices.Marshal")
+					&& calledMethod.HasParameterOfType (1, "System.Type")
+					&& calledMethod.HasParametersCount (2)
+					=> IntrinsicId.Marshal_DestroyStructure,
+
+				// static Delegate System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer (IntPtr, Type)
+				"GetDelegateForFunctionPointer" when calledMethod.IsDeclaredOnType ("System.Runtime.InteropServices.Marshal")
+					&& calledMethod.HasParameterOfType (1, "System.Type")
+					&& calledMethod.HasParametersCount (2)
+					=> IntrinsicId.Marshal_GetDelegateForFunctionPointer,
 
 				// static System.Type.GetType (string)
 				// static System.Type.GetType (string, Boolean)
@@ -275,13 +317,6 @@ namespace ILLink.Shared.TrimAnalysis
 					&& calledMethod.HasParameterOfType (1, "System.String")
 					=> IntrinsicId.Activator_CreateInstanceFrom,
 
-				// static T System.Activator.CreateInstance<T> ()
-				"CreateInstance" when calledMethod.IsDeclaredOnType ("System.Activator")
-					&& calledMethod.HasGenericParameters ()
-					&& calledMethod.HasGenericParametersCount (1)
-					&& calledMethod.HasParametersCount (0)
-					=> IntrinsicId.Activator_CreateInstanceOfT,
-
 				// System.AppDomain.CreateInstance (string assemblyName, string typeName)
 				// System.AppDomain.CreateInstance (string assemblyName, string typeName, bool ignoreCase, System.Reflection.BindingFlags bindingAttr, System.Reflection.Binder? binder, object? []? args, System.Globalization.CultureInfo? culture, object? []? activationAttributes)
 				// System.AppDomain.CreateInstance (string assemblyName, string typeName, object? []? activationAttributes)
@@ -336,6 +371,7 @@ namespace ILLink.Shared.TrimAnalysis
 					&& calledMethod.HasParameterOfType (0, "System.Type")
 					&& calledMethod.IsStatic ()
 					=> IntrinsicId.Nullable_GetUnderlyingType,
+
 				_ => IntrinsicId.None,
 			};
 		}

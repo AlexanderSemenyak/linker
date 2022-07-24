@@ -9,6 +9,7 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 {
 	[SkipKeptItemsValidation]
 	[ExpectedNoWarnings]
+	[UnconditionalSuppressMessage ("AOT", "IL3050", Justification = "These tests are not targetted at AOT scenarios")]
 	public class MakeGenericDataFlow
 	{
 		public static void Main ()
@@ -82,7 +83,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				inputType.MakeGenericType (typeof (TestType));
 			}
 
-			[ExpectedWarning ("IL2055", nameof (Type.MakeGenericType))]
+			// https://github.com/dotnet/linker/issues/2755
+			[ExpectedWarning ("IL2055", nameof (Type.MakeGenericType), ProducedBy = ProducedBy.Trimmer)]
 			static void TestWithUnknownTypeArray (Type[] types)
 			{
 				typeof (GenericWithPublicFieldsArgument<>).MakeGenericType (types);
@@ -96,7 +98,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				typeof (GenericWithPublicFieldsArgument<>).MakeGenericType (types);
 			}
 
-			[ExpectedWarning ("IL2055", nameof (Type.MakeGenericType))]
+			// https://github.com/dotnet/linker/issues/2755
+			[ExpectedWarning ("IL2055", nameof (Type.MakeGenericType), ProducedBy = ProducedBy.Trimmer)]
 			static void TestWithArrayUnknownLengthSet (int arrayLen)
 			{
 				Type[] types = new Type[arrayLen];
@@ -264,6 +267,9 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				TestWithNewConstraint ();
 				TestWithStructConstraint ();
 				TestWithUnmanagedConstraint ();
+
+				TestGetMethodFromHandle ();
+				TestGetMethodFromHandleWithWarning ();
 			}
 
 			static void TestNullMethod ()
@@ -328,13 +334,15 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 				typeof (TestType).GetRuntimeMethod ("NoSuchMethod", new Type[] { }).MakeGenericMethod (unknownType);
 			}
 
-			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
+			// https://github.com/dotnet/linker/issues/2755
+			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod), ProducedBy = ProducedBy.Trimmer)]
 			static void TestUnknownMethod (MethodInfo mi)
 			{
 				mi.MakeGenericMethod (typeof (TestType));
 			}
 
-			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
+			// https://github.com/dotnet/linker/issues/2755
+			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod), ProducedBy = ProducedBy.Trimmer)]
 			static void TestUnknownMethodButNoTypeArguments (MethodInfo mi)
 			{
 				// Thechnically linker could figure this out, but it's not worth the complexity - such call will always fail at runtime.
@@ -444,7 +452,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 					.MakeGenericMethod (noValue);
 			}
 
-			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
+			// https://github.com/dotnet/linker/issues/2755
+			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod), ProducedBy = ProducedBy.Trimmer)]
 			static void TestWithUnknownTypeArray (Type[] types)
 			{
 				typeof (MakeGenericMethod).GetMethod (nameof (GenericWithRequirements), BindingFlags.Static)
@@ -460,7 +469,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 					.MakeGenericMethod (types);
 			}
 
-			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
+			// https://github.com/dotnet/linker/issues/2158 - analyzer doesn't work the same as linker, it simply doesn't handle refs
+			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod), ProducedBy = ProducedBy.Trimmer)]
 			static void TestWithArrayUnknownIndexSetByRef (int indexToSet)
 			{
 				Type[] types = new Type[1];
@@ -471,7 +481,8 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 					.MakeGenericMethod (types);
 			}
 
-			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod))]
+			// https://github.com/dotnet/linker/issues/2755
+			[ExpectedWarning ("IL2060", nameof (MethodInfo.MakeGenericMethod), ProducedBy = ProducedBy.Trimmer)]
 			static void TestWithArrayUnknownLengthSet (int arrayLen)
 			{
 				Type[] types = new Type[arrayLen];
@@ -683,6 +694,19 @@ namespace Mono.Linker.Tests.Cases.DataFlow
 			static void GenericWithUnmanagedConstraint<T> () where T : unmanaged
 			{
 				var t = new T ();
+			}
+
+			static void TestGetMethodFromHandle (Type unknownType = null)
+			{
+				MethodInfo m = (MethodInfo) MethodInfo.GetMethodFromHandle (typeof (MakeGenericMethod).GetMethod (nameof (GenericWithNoRequirements)).MethodHandle);
+				m.MakeGenericMethod (unknownType);
+			}
+
+			[ExpectedWarning ("IL2070", nameof (MethodInfo.MakeGenericMethod))]
+			static void TestGetMethodFromHandleWithWarning ([DynamicallyAccessedMembers (DynamicallyAccessedMemberTypes.PublicMethods)] Type publicMethodsType = null)
+			{
+				MethodInfo m = (MethodInfo) MethodInfo.GetMethodFromHandle (typeof (MakeGenericMethod).GetMethod (nameof (GenericWithRequirements)).MethodHandle);
+				m.MakeGenericMethod (publicMethodsType);
 			}
 		}
 

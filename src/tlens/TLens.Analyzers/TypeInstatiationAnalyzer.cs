@@ -9,7 +9,7 @@ using Mono.Cecil.Cil;
 
 namespace TLens.Analyzers
 {
-	class TypeInstatiationAnalyzer : Analyzer
+	sealed class TypeInstatiationAnalyzer : Analyzer
 	{
 		readonly Dictionary<TypeDefinition, List<MethodDefinition>> types = new Dictionary<TypeDefinition, List<MethodDefinition>> ();
 
@@ -25,6 +25,10 @@ namespace TLens.Analyzers
 						throw new NotImplementedException ();
 
 					var md = mr.Resolve ();
+
+					if (md == null)
+						continue;
+
 					if (!md.IsConstructor)
 						continue;
 
